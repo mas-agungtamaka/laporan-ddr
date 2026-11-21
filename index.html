@@ -1,0 +1,2833 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DrillTrack Pro — Sistem Pencatatan Produksi Rig Harian (DDR)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase JS v2 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        navy: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        },
+                        mining: {
+                            amber: '#f59e0b',
+                            orange: '#ea580c',
+                            gold: '#fbbf24',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar & utility styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .tab-active {
+            background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background: white !important;
+            }
+            .print-shadow-none {
+                box-shadow: none !important;
+                border: 1px solid #e2e8f0 !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Toast Notification Container (Pengganti alert()) -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- Custom Confirm Modal (Pengganti confirm()) -->
+    <div id="confirm-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 transform transition-all">
+            <div class="flex items-center gap-3 text-amber-600 mb-3">
+                <div class="p-2.5 bg-amber-100 rounded-xl">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <h3 id="confirm-title" class="text-lg font-bold text-slate-900">Konfirmasi Tindakan</h3>
+            </div>
+            <p id="confirm-message" class="text-sm text-slate-600 leading-relaxed mb-6">Apakah Anda yakin ingin melanjutkan?</p>
+            <div class="flex justify-end gap-3">
+                <button id="confirm-cancel-btn" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">Batal</button>
+                <button id="confirm-ok-btn" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 shadow-sm transition">Ya, Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase Configuration Modal -->
+    <div id="supabase-config-modal" class="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 hidden items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 my-8">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                        <i data-lucide="database" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-900">Konfigurasi Cloud Supabase</h3>
+                        <p class="text-xs text-slate-500">Sinkronisasi antar perangkat + cadangan lokal otomatis</p>
+                    </div>
+                </div>
+                <button onclick="toggleSupabaseModal(false)" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="form-supabase-config" onsubmit="handleSaveSupabaseConfig(event)" class="mt-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Supabase Project URL</label>
+                    <input type="url" id="sb-url-input" required value="https://psywgrwqhivywbptzzlt.supabase.co" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:bg-white outline-none">
+                    <p class="text-[11px] text-slate-400 mt-1">Gunakan URL dasar proyek (tanpa <code class="font-mono">/rest/v1/</code>).</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Publishable / Anon Key</label>
+                    <textarea id="sb-key-input" rows="3" placeholder="Tempel Publishable atau Anon Key dari Project Settings -> API..." class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-500 outline-none"></textarea>
+                    <p class="text-[11px] text-slate-400 mt-1">Hanya gunakan kunci publik (<code class="font-mono">anon</code> / <code class="font-mono">publishable</code>). Kosongkan jika ingin memakai mode lokal saja.</p>
+                </div>
+
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
+                    <p class="font-bold text-slate-800 flex items-center gap-1.5">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5 text-amber-600"></i>
+                        <span>SQL Tabel Wajib (<code class="font-mono">ddr_state</code>):</span>
+                    </p>
+                    <pre class="bg-navy-950 text-slate-200 p-2.5 rounded-lg text-[11px] overflow-x-auto font-mono">create table if not exists public.ddr_state (
+  id text primary key,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+insert into public.ddr_state (id, payload)
+values ('main_app', '{}'::jsonb)
+on conflict (id) do nothing;</pre>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="clearSupabaseConfig()" class="px-3.5 py-2 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition">
+                        Hapus Key (Mode Lokal)
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="toggleSupabaseModal(false)" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
+                        <button type="submit" class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 shadow">
+                            Simpan & Hubungkan
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Top Navigation Bar (Industrial Navy Theme) -->
+    <header class="bg-navy-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-lg no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between py-3.5 gap-3">
+                <!-- Brand Logo -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-navy-950 font-extrabold shadow-md">
+                            <i data-lucide="drill" class="w-6 h-6 text-white"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-extrabold text-lg tracking-tight text-white">DRILL<span class="text-amber-400">TRACK</span></span>
+                                <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">DDR Cloud</span>
+                            </div>
+                            <p class="text-xs text-slate-400">Daily Drilling Report & Rig Monitoring</p>
+                        </div>
+                    </div>
+                    <!-- Mobile Quick Actions -->
+                    <div class="flex lg:hidden items-center gap-1.5">
+                        <button onclick="toggleSupabaseModal(true)" title="Pengaturan Supabase" class="p-2 text-slate-300 hover:text-amber-400 rounded-lg bg-slate-800/80 border border-slate-700">
+                            <i data-lucide="database" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="confirmResetDemo()" title="Reset ke Data Awal" class="p-2 text-slate-300 hover:text-amber-400 rounded-lg bg-slate-800/80 border border-slate-700">
+                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 3 Main Navigation Tabs -->
+                <nav class="flex items-center bg-navy-950/80 p-1.5 rounded-xl border border-slate-800 overflow-x-auto">
+                    <button onclick="switchTab('home')" id="nav-home" class="nav-btn tab-active flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition whitespace-nowrap">
+                        <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                        <span>1. Index / Home</span>
+                    </button>
+                    <button onclick="switchTab('project')" id="nav-project" class="nav-btn text-slate-300 hover:text-white flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition whitespace-nowrap">
+                        <i data-lucide="hard-hat" class="w-4 h-4"></i>
+                        <span>2. Project & Input DDR</span>
+                    </button>
+                    <button onclick="switchTab('rekap')" id="nav-rekap" class="nav-btn text-slate-300 hover:text-white flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition whitespace-nowrap">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        <span>3. Rekap & Evaluasi</span>
+                    </button>
+                </nav>
+
+                <!-- Sync Status & Utility Controls Desktop -->
+                <div class="hidden lg:flex items-center gap-2">
+                    <button onclick="manualCloudSync()" id="btn-manual-sync" title="Sinkronkan / Tarik Data Terbaru" class="inline-flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition">
+                        <i data-lucide="refresh-cw" id="sync-icon" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span id="sync-status-badge">Memuat...</span>
+                    </button>
+                    <button onclick="toggleSupabaseModal(true)" title="Atur Koneksi Supabase" class="inline-flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg border border-slate-700 transition">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Cloud Key</span>
+                    </button>
+                    <button onclick="confirmResetDemo()" title="Reset ke Data Awal Demo" class="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-amber-400 bg-slate-800/60 hover:bg-slate-800 px-2.5 py-2 rounded-lg border border-slate-800 transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mobile Sync Bar -->
+            <div class="flex lg:hidden items-center justify-between py-2 border-t border-slate-800/80 text-xs">
+                <div class="flex items-center gap-1.5 text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span id="sync-status-badge-mobile">Memuat...</span>
+                </div>
+                <button onclick="manualCloudSync()" class="inline-flex items-center gap-1 font-semibold text-amber-400 hover:text-amber-300">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    <span>Sinkronkan</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading Banner saat sinkronisasi awal -->
+    <div id="global-loading-bar" class="bg-amber-500/15 border-b border-amber-500/30 text-amber-950 text-xs font-medium py-2 px-4 text-center hidden no-print">
+        <span class="inline-flex items-center gap-2">
+            <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-orange-600"></i>
+            <span id="global-loading-text">Menyinkronkan data dengan Supabase...</span>
+        </span>
+    </div>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ===================================================================== -->
+        <!-- HALAMAN 1: INDEX / HOME (DASHBOARD REKAP KESELURUHAN)                 -->
+        <!-- ===================================================================== -->
+        <section id="page-home" class="space-y-6">
+            <!-- Header & Site Selector -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                    <div>
+                        <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-orange-600 bg-orange-50 px-2.5 py-1 rounded-md mb-1.5">
+                            <span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span> Dashboard Operasional Lapangan
+                        </span>
+                        <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">Ringkasan Produksi & Performa Rig</h1>
+                        <p class="text-sm text-slate-500 mt-0.5">Pilih site project di bawah untuk memantau total volume meteran, unit berjalan, dan perolehan per rig.</p>
+                    </div>
+
+                    <!-- Dropdown Site Selector -->
+                    <div class="w-full lg:w-80">
+                        <label for="home-site-select" class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Pilih Site Project Aktif</label>
+                        <div class="relative">
+                            <select id="home-site-select" onchange="selectHomeSite(this.value)" class="w-full appearance-none bg-slate-50 border border-slate-300 text-slate-900 text-sm font-semibold rounded-xl px-4 py-3 pr-10 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition cursor-pointer">
+                                <!-- Diisi dinamis oleh JS -->
+                            </select>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 absolute right-3.5 top-3.5 pointer-events-none"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Site Cards Strip -->
+                <div class="mt-5">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Akses Cepat Daftar Site Project:</p>
+                    <div id="home-site-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        <!-- Diisi dinamis oleh JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selected Site Banner & KPI Metrics -->
+            <div id="home-selected-dashboard" class="space-y-6">
+                <!-- Site Info Banner -->
+                <div class="bg-gradient-to-r from-navy-900 via-navy-800 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-700">
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <span id="home-badge-client" class="text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full">Klien: -</span>
+                            <span id="home-badge-rigs" class="text-xs font-mono bg-slate-700/80 text-slate-200 px-2.5 py-0.5 rounded-full">0 Unit Terdaftar</span>
+                        </div>
+                        <h2 id="home-site-title" class="text-xl sm:text-2xl font-bold text-white mt-1">-</h2>
+                        <p class="text-xs sm:text-sm text-slate-300 mt-1">Periode Proyek Berjalan • Akumulasi Data Harian Lapangan</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2.5 no-print">
+                        <button onclick="goToProjectInput()" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-navy-950 font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow transition">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            <span>Input Laporan Harian Site Ini</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4 KPI Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- KPI 1: Total Volume Didapat -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Volume Didapat</p>
+                                <h3 id="kpi-total-meter" class="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900 mt-1.5">0.0 m</h3>
+                            </div>
+                            <div class="p-2.5 rounded-xl bg-amber-50 text-amber-600">
+                                <i data-lucide="layers" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div class="flex justify-between text-xs font-semibold mb-1">
+                                <span class="text-slate-500">Target: <span id="kpi-target-meter" class="text-slate-700 font-mono">0 m</span></span>
+                                <span id="kpi-progress-pct" class="text-orange-600 font-mono">0%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                <div id="kpi-progress-bar" class="bg-gradient-to-r from-amber-500 to-orange-600 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- KPI 2: Jumlah Unit Berjalan -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Jumlah Unit Berjalan</p>
+                                <h3 id="kpi-active-rigs" class="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900 mt-1.5">0 / 0</h3>
+                            </div>
+                            <div class="p-2.5 rounded-xl bg-emerald-50 text-emerald-600">
+                                <i data-lucide="activity" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <p id="kpi-active-rigs-desc" class="text-xs text-slate-500 mt-4">Unit aktif beroperasi pada site ini</p>
+                    </div>
+
+                    <!-- KPI 3: Total Penggunaan Solar -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Penggunaan Solar</p>
+                                <h3 id="kpi-total-fuel" class="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900 mt-1.5">0 L</h3>
+                            </div>
+                            <div class="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+                                <i data-lucide="fuel" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <p id="kpi-fuel-ratio" class="text-xs text-slate-500 mt-4">Rasio konsumsi: <span class="font-mono font-semibold text-slate-700">0.00 L/m</span></p>
+                    </div>
+
+                    <!-- KPI 4: Total Hole Selesai (EOH) -->
+                    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Laporan & EOH</p>
+                                <h3 id="kpi-total-eoh" class="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900 mt-1.5">0 EOH</h3>
+                            </div>
+                            <div class="p-2.5 rounded-xl bg-purple-50 text-purple-600">
+                                <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <p id="kpi-total-logs" class="text-xs text-slate-500 mt-4">Dari <span class="font-mono font-semibold text-slate-700">0</span> laporan harian tercatat</p>
+                    </div>
+                </div>
+
+                <!-- Chart & Rig Breakdown Table -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Bar Chart Perolehan per Rig -->
+                    <div class="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 flex flex-col">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-base">Grafik Perolehan per Unit Rig</h3>
+                                <p class="text-xs text-slate-500">Akumulasi meteran periode berjalan (m)</p>
+                            </div>
+                            <span class="p-2 bg-slate-100 rounded-lg text-slate-600">
+                                <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                            </span>
+                        </div>
+                        <div class="relative flex-1 min-h-[250px] w-full">
+                            <canvas id="homeRigChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Tabel Perolehan Masing-masing Unit Rig -->
+                    <div class="lg:col-span-7 bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 flex flex-col">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-base">Perolehan Masing-Masing Unit Rig</h3>
+                                <p class="text-xs text-slate-500">Rincian meteran, operator, solar, dan status terakhir unit</p>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto -mx-5 sm:mx-0">
+                            <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                    <thead>
+                                        <tr class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                                            <th class="py-3 px-3 rounded-l-lg">ID Unit Rig</th>
+                                            <th class="py-3 px-3">Operator</th>
+                                            <th class="py-3 px-3 text-right">Total Meter</th>
+                                            <th class="py-3 px-3 text-right">Total Solar</th>
+                                            <th class="py-3 px-3 rounded-r-lg">Status Terakhir</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="home-rig-table-body" class="divide-y divide-slate-100">
+                                        <!-- Diisi dinamis oleh JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- HALAMAN 2: PROJECT (MANAJEMEN SITE & INPUT DAILY DRILLING REPORT)     -->
+        <!-- ===================================================================== -->
+        <section id="page-project" class="hidden space-y-6">
+            <!-- Top Section: Project Selector & Button New Project -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md mb-1.5">
+                            <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i> Manajemen Site & Input DDR
+                        </span>
+                        <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">Project Site & Laporan Harian Rig</h1>
+                        <p class="text-sm text-slate-500 mt-0.5">Kelola daftar site project (CRUD), alokasi unit rig, serta catat produksi meteran harian.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="toggleSiteDirectoryPanel()" class="inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-sm px-3.5 py-3 rounded-xl border border-slate-200 transition">
+                            <i data-lucide="table-properties" class="w-4 h-4 text-navy-900"></i>
+                            <span>Daftar & Kelola Semua Site</span>
+                        </button>
+                        <button onclick="openCreateProjectModal()" class="inline-flex items-center justify-center gap-2 bg-navy-900 hover:bg-navy-800 text-white font-semibold text-sm px-4 py-3 rounded-xl shadow-sm transition">
+                            <i data-lucide="plus" class="w-4 h-4 text-amber-400"></i>
+                            <span>Tambah Project Site Baru</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Project Selector Pills -->
+                <div class="mt-5 pt-4 border-t border-slate-100">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Pilih Project Site yang Dikerjakan:</label>
+                    <div id="project-tabs-list" class="flex flex-wrap gap-2.5">
+                        <!-- Diisi dinamis oleh JS -->
+                    </div>
+                </div>
+
+                <!-- Direktori CRUD Semua Site (Read, Edit, Delete) -->
+                <div id="site-directory-panel" class="mt-6 pt-5 border-t border-slate-200">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                        <div>
+                            <h3 class="text-sm font-extrabold uppercase tracking-wider text-slate-800">Direktori Semua Project Site (CRUD)</h3>
+                            <p class="text-xs text-slate-500">Lihat progres volume, ubah data/status/target site, atau hapus site beserta laporannya.</p>
+                        </div>
+                        <span id="site-directory-count" class="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-full">0 Site</span>
+                    </div>
+                    <div class="overflow-x-auto -mx-5 sm:mx-0">
+                        <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead>
+                                    <tr class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                                        <th class="py-3 px-3 rounded-l-lg">Nama / Kode & Lokasi Site</th>
+                                        <th class="py-3 px-3">Klien</th>
+                                        <th class="py-3 px-3 text-center">Status</th>
+                                        <th class="py-3 px-3 text-right">Capaian / Target</th>
+                                        <th class="py-3 px-3 text-center">Unit Rig</th>
+                                        <th class="py-3 px-3 text-center rounded-r-lg">Aksi CRUD</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="site-directory-tbody" class="divide-y divide-slate-100">
+                                    <!-- Diisi dinamis oleh JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Form Create / Update Project Site -->
+            <div id="new-project-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 hidden items-center justify-center p-4 overflow-y-auto">
+                <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 my-8">
+                    <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                        <div class="flex items-center gap-2.5">
+                            <div class="p-2 bg-amber-100 text-amber-700 rounded-xl">
+                                <i data-lucide="map-pin" class="w-5 h-5"></i>
+                            </div>
+                            <h3 id="project-modal-title" class="text-lg font-bold text-slate-900">Tambah Project Site Baru</h3>
+                        </div>
+                        <button onclick="toggleNewProjectModal(false)" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <form id="form-new-project" onsubmit="handleSaveProject(event)" class="mt-5 space-y-4">
+                        <input type="hidden" id="np-edit-id" value="">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama / Kode Site *</label>
+                                <input type="text" id="np-code" required placeholder="Contoh: SITE-PML-01" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-mono font-semibold uppercase focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Lokasi Site *</label>
+                                <input type="text" id="np-location" required placeholder="Contoh: Pomalaa - Blok Utara" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Klien *</label>
+                                <input type="text" id="np-client" required placeholder="Contoh: PT Vale Indonesia Tbk" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Status Project *</label>
+                                <select id="np-status" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                                    <option value="Active">Active (Aktif)</option>
+                                    <option value="On Hold">On Hold (Ditunda)</option>
+                                    <option value="Completed">Completed (Selesai)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Target Volume / Kontrak (Meter) *</label>
+                                <input type="number" id="np-target" required min="1" step="0.1" placeholder="Contoh: 5000" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Jumlah Unit Rig Mengerjakan *</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" id="np-rig-count" required min="1" max="20" value="2" onchange="generateNewProjectRigInputs(this.value)" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                                    <button type="button" onclick="generateNewProjectRigInputs(document.getElementById('np-rig-count').value)" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl whitespace-nowrap">Set Slot</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Rig Roster Setup -->
+                        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">Daftar Unit Rig & Operator pada Site Ini:</p>
+                            <div id="np-rig-slots" class="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                                <!-- Diisi dinamis -->
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                            <button type="button" onclick="toggleNewProjectModal(false)" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
+                            <button type="submit" id="btn-save-project-modal" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 shadow">Simpan Project Site</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Active Project Details & Fleet Management -->
+            <div id="project-detail-wrapper" class="space-y-6">
+                <!-- Project Info Card -->
+                <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span id="proj-detail-code" class="text-xs font-mono font-extrabold px-2.5 py-0.5 rounded-md bg-navy-900 text-amber-400">-</span>
+                                <h2 id="proj-detail-location" class="text-lg sm:text-xl font-extrabold text-slate-900">-</h2>
+                                <span id="proj-detail-status-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs sm:text-sm text-slate-600 mt-1.5">
+                                <span class="flex items-center gap-1.5"><i data-lucide="building-2" class="w-4 h-4 text-slate-400"></i> Klien: <strong id="proj-detail-client" class="text-slate-800">-</strong></span>
+                                <span class="flex items-center gap-1.5"><i data-lucide="target" class="w-4 h-4 text-orange-500"></i> Target Kontrak: <strong id="proj-detail-target" class="font-mono text-slate-800">0 m</strong></span>
+                                <span class="flex items-center gap-1.5"><i data-lucide="truck" class="w-4 h-4 text-blue-500"></i> Armada Rig: <strong id="proj-detail-rigcount" class="font-mono text-slate-800">0 Unit</strong></span>
+                            </div>
+                        </div>
+
+                        <!-- Edit, Delete & Manage Rigs for Active Project -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button onclick="openEditProjectModal(appState.selectedProjectSiteId)" class="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-3.5 py-2.5 rounded-xl border border-amber-200 transition">
+                                <i data-lucide="pencil" class="w-4 h-4 text-amber-600"></i>
+                                <span>Edit Site</span>
+                            </button>
+                            <button onclick="deleteProjectSite(appState.selectedProjectSiteId)" class="inline-flex items-center gap-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 px-3.5 py-2.5 rounded-xl border border-red-200 transition">
+                                <i data-lucide="trash-2" class="w-4 h-4 text-red-600"></i>
+                                <span>Hapus Site</span>
+                            </button>
+                            <button onclick="toggleAddRigInline()" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3.5 py-2.5 rounded-xl border border-slate-200 transition">
+                                <i data-lucide="plus-square" class="w-4 h-4 text-orange-600"></i>
+                                <span>Kelola / Tambah Unit Rig</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Inline Manage Rigs in Project -->
+                    <div id="manage-rigs-panel" class="hidden mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700">Armada Unit Rig Terdaftar di Project Ini</h4>
+                            <form onsubmit="handleAddRigToProject(event)" class="flex flex-wrap items-center gap-2">
+                                <input type="text" id="add-rig-id" required placeholder="ID Rig (mis: RIG-05)" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-mono uppercase focus:ring-2 focus:ring-amber-500 outline-none">
+                                <input type="text" id="add-rig-op" required placeholder="Nama Operator Default" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none">
+                                <button type="submit" class="bg-navy-900 hover:bg-navy-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">+ Tambah Rig</button>
+                            </form>
+                        </div>
+                        <div id="project-rigs-badges" class="flex flex-wrap gap-2">
+                            <!-- Diisi dinamis -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FORM INPUT DAILY DRILLING REPORT (DDR) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                    <div class="bg-navy-900 px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="flex items-center gap-2.5">
+                            <div class="p-2 bg-amber-500/20 rounded-lg text-amber-400">
+                                <i data-lucide="clipboard-edit" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 id="ddr-form-title" class="font-bold text-white text-base">Form Input Daily Drilling Report (DDR)</h3>
+                                <p class="text-xs text-slate-400">Catat perolehan meteran harian per rig (mendukung multi-hole & multi-status)</p>
+                            </div>
+                        </div>
+                        <button type="button" id="btn-cancel-edit" onclick="resetDDRForm()" class="hidden text-xs font-semibold bg-slate-800 text-amber-400 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700">
+                            Batal Mode Edit
+                        </button>
+                    </div>
+
+                    <form id="form-ddr" onsubmit="handleSaveDDR(event)" class="p-5 sm:p-6 space-y-6">
+                        <input type="hidden" id="ddr-edit-id" value="">
+
+                        <!-- Baris 1: Tanggal, ID Unit Rig, Nama Operator, Solar -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Tanggal Laporan *</label>
+                                <input type="date" id="ddr-date" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">ID Unit Rig *</label>
+                                <select id="ddr-rig-select" required onchange="onDDRRigChange()" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                                    <!-- Diisi dinamis dari daftar rig project -->
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Nama Operator *</label>
+                                <input type="text" id="ddr-operator" required placeholder="Nama Operator Shift" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Penggunaan Solar (Liter) *</label>
+                                <div class="relative">
+                                    <input type="number" id="ddr-fuel" required min="0" step="0.1" placeholder="0" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-12 text-sm font-mono font-semibold focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                                    <span class="absolute right-3.5 top-2.5 text-xs font-bold text-slate-400">Liter</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Baris 2: Hole Dikerjakan (Dynamic Multi-Hole Rows) -->
+                        <div class="bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                <div>
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <i data-lucide="arrow-down-to-line" class="w-4 h-4 text-orange-600"></i>
+                                        <span>Hole Dikerjakan Hari Ini (Bisa lebih dari 1 hole)</span>
+                                    </h4>
+                                    <p class="text-xs text-slate-500">Isi ID Hole, kedalaman From dan To. Meter didapat terhitung otomatis.</p>
+                                </div>
+                                <button type="button" onclick="addHoleRow()" class="inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-navy-950 font-bold text-xs px-3.5 py-2 rounded-xl shadow-sm transition">
+                                    <i data-lucide="plus" class="w-4 h-4"></i>
+                                    <span>+ Tambah Hole</span>
+                                </button>
+                            </div>
+
+                            <!-- Header Kolom Hole (Desktop) -->
+                            <div class="hidden sm:grid sm:grid-cols-12 gap-3 px-2 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                <div class="col-span-3">ID Hole</div>
+                                <div class="col-span-3">From (m)</div>
+                                <div class="col-span-3">To (m)</div>
+                                <div class="col-span-2 text-right">Meter Didapat</div>
+                                <div class="col-span-1 text-center">Aksi</div>
+                            </div>
+
+                            <div id="ddr-holes-container" class="space-y-2.5">
+                                <!-- Baris Hole Dinamis dimasukkan via JS -->
+                            </div>
+                        </div>
+
+                        <!-- Baris 3: Ringkasan Kalkulasi Otomatis (Meter Hari Ini & Akumulasi Periode Berjalan) -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="bg-amber-50/80 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Total Meter Didapat Hari Ini</span>
+                                    <p class="text-xs text-amber-700/80 mt-0.5">Penjumlahan seluruh hole di atas</p>
+                                </div>
+                                <div class="text-right">
+                                    <span id="ddr-today-total" class="text-2xl font-extrabold font-mono text-orange-600">0.0 m</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-navy-900 text-white rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-400">Total Meter Periode Berjalan (Unit Ini)</span>
+                                    <p class="text-xs text-slate-400 mt-0.5">Akumulasi riwayat rig + input hari ini</p>
+                                </div>
+                                <div class="text-right">
+                                    <span id="ddr-cumulative-total" class="text-2xl font-extrabold font-mono text-white">0.0 m</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Baris 4: Status Unit (Multi-Select Checkboxes) -->
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-slate-600 mb-2">
+                                Status Unit Hari Ini * <span class="font-normal normal-case text-slate-400">(Dapat memilih lebih dari 1 keterangan sekaligus)</span>
+                            </label>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" name="ddr-status" value="Continue Hole" class="peer sr-only">
+                                    <div class="p-3 rounded-xl border-2 border-slate-200 bg-white peer-checked:border-blue-600 peer-checked:bg-blue-50 transition flex items-center gap-2.5">
+                                        <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                                        <span class="text-xs sm:text-sm font-bold text-slate-700 peer-checked:text-blue-900">Continue Hole</span>
+                                    </div>
+                                </label>
+
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" name="ddr-status" value="EOH" class="peer sr-only">
+                                    <div class="p-3 rounded-xl border-2 border-slate-200 bg-white peer-checked:border-emerald-600 peer-checked:bg-emerald-50 transition flex items-center gap-2.5">
+                                        <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                                        <span class="text-xs sm:text-sm font-bold text-slate-700 peer-checked:text-emerald-900">EOH (End of Hole)</span>
+                                    </div>
+                                </label>
+
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" name="ddr-status" value="Moving" class="peer sr-only">
+                                    <div class="p-3 rounded-xl border-2 border-slate-200 bg-white peer-checked:border-amber-500 peer-checked:bg-amber-50 transition flex items-center gap-2.5">
+                                        <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                                        <span class="text-xs sm:text-sm font-bold text-slate-700 peer-checked:text-amber-900">Moving</span>
+                                    </div>
+                                </label>
+
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" name="ddr-status" value="Maintenance" class="peer sr-only">
+                                    <div class="p-3 rounded-xl border-2 border-slate-200 bg-white peer-checked:border-red-600 peer-checked:bg-red-50 transition flex items-center gap-2.5">
+                                        <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                                        <span class="text-xs sm:text-sm font-bold text-slate-700 peer-checked:text-red-900">Maintenance</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Catatan Tambahan & Submit -->
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-4 pt-2 border-t border-slate-100">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold uppercase text-slate-600 mb-1.5">Catatan Lapangan (Opsional)</label>
+                                <input type="text" id="ddr-notes" placeholder="Keterangan kendala teknis, kondisi batuan, atau sparepart..." class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                            </div>
+                            <button type="submit" id="btn-submit-ddr" class="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md transition whitespace-nowrap">
+                                <i data-lucide="save" class="w-4 h-4"></i>
+                                <span>Simpan Laporan Harian</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- RIWAYAT INPUT HARIAN PADA PROJECT INI -->
+                <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Riwayat Input Daily Drilling Report</h3>
+                            <p class="text-xs text-slate-500">Daftar catatan harian rig pada site <span id="history-site-name" class="font-semibold text-slate-700">-</span></p>
+                        </div>
+
+                        <!-- Filter Riwayat -->
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <select id="filter-history-rig" onchange="renderProjectHistoryTable()" class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500">
+                                <option value="ALL">Semua Unit Rig</option>
+                            </select>
+                            <input type="date" id="filter-history-date" onchange="renderProjectHistoryTable()" class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-500">
+                            <button onclick="clearHistoryFilters()" class="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2.5 py-2 rounded-lg hover:bg-slate-100">Reset Filter</button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto -mx-5 sm:mx-0">
+                        <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead>
+                                    <tr class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                                        <th class="py-3 px-3 rounded-l-lg">Tanggal</th>
+                                        <th class="py-3 px-3">Unit & Operator</th>
+                                        <th class="py-3 px-3">Rincian Hole (From - To)</th>
+                                        <th class="py-3 px-3 text-right">Meter Hari Ini</th>
+                                        <th class="py-3 px-3 text-right">Solar</th>
+                                        <th class="py-3 px-3">Status Unit</th>
+                                        <th class="py-3 px-3 text-center rounded-r-lg">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="project-history-tbody" class="divide-y divide-slate-100">
+                                    <!-- Diisi dinamis oleh JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================================================================== -->
+        <!-- HALAMAN 3: REKAP (ANALISIS & EVALUASI PERFORMA + MAINTENANCE ALERT)   -->
+        <!-- ===================================================================== -->
+        <section id="page-rekap" class="hidden space-y-6">
+            <!-- Header & Export Actions -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md mb-1.5">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Laporan Manajemen & Evaluasi
+                    </span>
+                    <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">Rekapitulasi Site & Analisis Maintenance Rig</h1>
+                    <p class="text-sm text-slate-500 mt-0.5">Komparasi pencapaian antar site, rata-rata produksi harian, dan deteksi rig dengan downtime tinggi.</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2.5 no-print">
+                    <button onclick="exportRekapCSV()" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-sm transition">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        <span>Export CSV</span>
+                    </button>
+                    <button onclick="exportBackupJSON()" class="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-slate-200 transition">
+                        <i data-lucide="hard-drive-download" class="w-4 h-4 text-slate-600"></i>
+                        <span>Backup JSON</span>
+                    </button>
+                    <label class="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-slate-200 transition cursor-pointer">
+                        <i data-lucide="upload" class="w-4 h-4 text-slate-600"></i>
+                        <span>Restore JSON</span>
+                        <input type="file" accept=".json" onchange="importBackupJSON(event)" class="hidden">
+                    </label>
+                    <button onclick="window.print()" class="inline-flex items-center gap-2 bg-navy-900 hover:bg-navy-800 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-sm transition">
+                        <i data-lucide="printer" class="w-4 h-4 text-amber-400"></i>
+                        <span>Cetak / Print</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 1. HIGHLIGHT ALERT: RIG DENGAN MAINTENANCE TINGGI -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border-2 border-red-200 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-red-600"></div>
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-5">
+                    <div class="flex items-start gap-3">
+                        <div class="p-3 bg-red-100 text-red-600 rounded-xl shrink-0">
+                            <i data-lucide="wrench" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-lg font-extrabold text-slate-900">Deteksi & Peringatan Maintenance Rig</h2>
+                                <span id="rekap-maint-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700">Analisis Otomatis</span>
+                            </div>
+                            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">Pemantauan unit rig yang paling sering mengalami status <strong class="text-red-600">Maintenance</strong> berdasarkan riwayat laporan harian.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Highlight Cards Top Maintenance Rigs -->
+                <div id="rekap-maint-cards" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                    <!-- Diisi dinamis oleh JS -->
+                </div>
+
+                <!-- Tabel Ranking Frekuensi Maintenance Seluruh Rig -->
+                <div class="overflow-x-auto -mx-5 sm:mx-0">
+                    <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead>
+                                <tr class="bg-red-50/70 text-left text-xs font-bold uppercase tracking-wider text-slate-600">
+                                    <th class="py-3 px-3 rounded-l-lg">Peringkat</th>
+                                    <th class="py-3 px-3">ID Unit Rig</th>
+                                    <th class="py-3 px-3">Lokasi Site</th>
+                                    <th class="py-3 px-3 text-center">Kejadian Maintenance</th>
+                                    <th class="py-3 px-3 text-center">Total Hari Kerja</th>
+                                    <th class="py-3 px-3 text-right">Rasio Maintenance</th>
+                                    <th class="py-3 px-3 rounded-r-lg">Status Evaluasi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-maint-tbody" class="divide-y divide-slate-100">
+                                <!-- Diisi dinamis oleh JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. REKAPAN KOMPARASI MASING-MASING SITE -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                <div class="mb-4">
+                    <h2 class="text-lg font-extrabold text-slate-900">Rekapitulasi Pencapaian Kontrak per Site</h2>
+                    <p class="text-xs sm:text-sm text-slate-500">Perbandingan target kontrak, realisasi meter, sisa volume, dan efisiensi bahan bakar solar.</p>
+                </div>
+
+                <div class="overflow-x-auto -mx-5 sm:mx-0">
+                    <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead>
+                                <tr class="bg-navy-900 text-left text-xs font-bold uppercase tracking-wider text-slate-200">
+                                    <th class="py-3.5 px-3 rounded-l-lg">Lokasi Site & Klien</th>
+                                    <th class="py-3.5 px-3 text-right">Target Kontrak</th>
+                                    <th class="py-3.5 px-3 text-right">Realisasi Meter</th>
+                                    <th class="py-3.5 px-3 text-right">Sisa Target</th>
+                                    <th class="py-3.5 px-3 text-center">% Pencapaian</th>
+                                    <th class="py-3.5 px-3 text-right">Rata-rata / Hari</th>
+                                    <th class="py-3.5 px-3 text-right">Total Solar</th>
+                                    <th class="py-3.5 px-3 text-right rounded-r-lg">Rasio (L/m)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-sites-tbody" class="divide-y divide-slate-100">
+                                <!-- Diisi dinamis oleh JS -->
+                            </tbody>
+                            <tfoot id="rekap-sites-tfoot" class="bg-slate-100 font-bold text-slate-900">
+                                <!-- Total Keseluruhan -->
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. RATA-RATA HASIL PRODUKSI HARIAN PER RIG -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200/80">
+                <div class="mb-4">
+                    <h2 class="text-lg font-extrabold text-slate-900">Rata-Rata Produksi Harian Masing-Masing Unit Rig</h2>
+                    <p class="text-xs sm:text-sm text-slate-500">Evaluasi produktivitas rata-rata meter per shift/hari aktif untuk setiap unit rig di seluruh site.</p>
+                </div>
+
+                <div class="overflow-x-auto -mx-5 sm:mx-0">
+                    <div class="inline-block min-w-full align-middle px-5 sm:px-0">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead>
+                                <tr class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                                    <th class="py-3 px-3 rounded-l-lg">ID Unit Rig</th>
+                                    <th class="py-3 px-3">Site Project</th>
+                                    <th class="py-3 px-3">Operator</th>
+                                    <th class="py-3 px-3 text-center">Hari Operasional</th>
+                                    <th class="py-3 px-3 text-right">Total Meter</th>
+                                    <th class="py-3 px-3 text-right">Rata-Rata (m/hari)</th>
+                                    <th class="py-3 px-3 text-right rounded-r-lg">Total EOH</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-rig-avg-tbody" class="divide-y divide-slate-100">
+                                <!-- Diisi dinamis oleh JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 mt-10 py-4 text-center text-xs text-slate-400 no-print">
+        <div class="max-w-7xl mx-auto px-4">
+            DrillTrack Pro — Sistem Manajemen Daily Drilling Report & Produksi Rig Lapangan • Cloud Supabase + Cadangan Lokal
+        </div>
+    </footer>
+
+    <!-- ========================================================================= -->
+    <!-- JAVASCRIPT APPLICATION LOGIC                                              -->
+    <!-- ========================================================================= -->
+    <script>
+        // Konfigurasi Supabase & Penyimpanan Lokal
+        const DEFAULT_SUPABASE_URL = 'https://psywgrwqhivywbptzzlt.supabase.co';
+        const SB_CONFIG_STORAGE_KEY = 'drilltrack_supabase_cfg_v1';
+        const LOCAL_BACKUP_KEY = 'drilltrack_ddr_backup_v1';
+        const PENDING_SYNC_KEY = 'drilltrack_ddr_pending_sync_v1';
+        const DDR_ROW_ID = 'main_app';
+
+        // State Global Aplikasi
+        let appState = {
+            projects: [],
+            reports: [],
+            selectedHomeSiteId: null,
+            selectedProjectSiteId: null,
+            updatedAt: new Date().toISOString()
+        };
+
+        let sbConfig = {
+            url: DEFAULT_SUPABASE_URL,
+            anonKey: ''
+        };
+        let sbClient = null;
+        let homeChartInstance = null;
+        let isSyncing = false;
+
+        // =========================================================================
+        // 1. DATA DUMMY AWAL YANG REALISTIS (INDUSTRI PERTAMBANGAN / GEOTEKNIK)
+        // =========================================================================
+        function getInitialDemoData() {
+            return {
+                updatedAt: new Date().toISOString(),
+                selectedHomeSiteId: 'proj-morowali',
+                selectedProjectSiteId: 'proj-morowali',
+                projects: [
+                    {
+                        id: 'proj-morowali',
+                        code: 'SITE-MRL-01',
+                        location: 'Morowali - Blok Bahodopi',
+                        client: 'PT Indonesia Morowali Industrial Park (IMIP)',
+                        targetVolume: 2500,
+                        status: 'Active',
+                        rigs: [
+                            { id: 'RIG-JD01', operator: 'Budi Santoso' },
+                            { id: 'RIG-JD02', operator: 'Hendra Wijaya' },
+                            { id: 'RIG-JD03', operator: 'Rizky Pratama' }
+                        ]
+                    },
+                    {
+                        id: 'proj-wedabay',
+                        code: 'SITE-WBN-02',
+                        location: 'Weda Bay - Zona Tengah',
+                        client: 'PT Weda Bay Nickel',
+                        targetVolume: 3200,
+                        status: 'Active',
+                        rigs: [
+                            { id: 'RIG-WB01', operator: 'Ahmad Fauzi' },
+                            { id: 'RIG-WB02', operator: 'Dedi Kurniawan' }
+                        ]
+                    },
+                    {
+                        id: 'proj-sorowako',
+                        code: 'SITE-SRW-03',
+                        location: 'Sorowako - Petea Timur',
+                        client: 'PT Vale Indonesia Tbk',
+                        targetVolume: 1800,
+                        status: 'On Hold',
+                        rigs: [
+                            { id: 'RIG-SR01', operator: 'Syarifuddin' },
+                            { id: 'RIG-SR02', operator: 'Agus Salim' }
+                        ]
+                    }
+                ],
+                reports: [
+                    {
+                        id: 'rep-101',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-16',
+                        rigId: 'RIG-JD01',
+                        operator: 'Budi Santoso',
+                        holes: [
+                            { holeId: 'BHD-01', from: 0, to: 38.5, meters: 38.5 },
+                            { holeId: 'BHD-02', from: 0, to: 24.0, meters: 24.0 }
+                        ],
+                        totalMeters: 62.5,
+                        fuel: 145,
+                        statuses: ['EOH', 'Moving', 'Continue Hole'],
+                        notes: 'BHD-01 EOH di kedalaman 38.5m, lanjut titik BHD-02.'
+                    },
+                    {
+                        id: 'rep-102',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-17',
+                        rigId: 'RIG-JD01',
+                        operator: 'Budi Santoso',
+                        holes: [
+                            { holeId: 'BHD-02', from: 24.0, to: 52.0, meters: 28.0 },
+                            { holeId: 'BHD-03', from: 0, to: 31.5, meters: 31.5 }
+                        ],
+                        totalMeters: 59.5,
+                        fuel: 140,
+                        statuses: ['EOH', 'Continue Hole'],
+                        notes: 'Lapisan saprolit tebal, core recovery 96%.'
+                    },
+                    {
+                        id: 'rep-103',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-18',
+                        rigId: 'RIG-JD01',
+                        operator: 'Budi Santoso',
+                        holes: [
+                            { holeId: 'BHD-03', from: 31.5, to: 48.0, meters: 16.5 },
+                            { holeId: 'BHD-04', from: 0, to: 44.0, meters: 44.0 }
+                        ],
+                        totalMeters: 60.5,
+                        fuel: 150,
+                        statuses: ['EOH', 'Moving'],
+                        notes: 'Target bedrock tercapai pada kedua hole.'
+                    },
+                    {
+                        id: 'rep-104',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-16',
+                        rigId: 'RIG-JD02',
+                        operator: 'Hendra Wijaya',
+                        holes: [
+                            { holeId: 'BHD-10', from: 0, to: 18.0, meters: 18.0 }
+                        ],
+                        totalMeters: 18.0,
+                        fuel: 85,
+                        statuses: ['Continue Hole', 'Maintenance'],
+                        notes: 'Pecah selang hidrolik utama pukul 13.00 WITA.'
+                    },
+                    {
+                        id: 'rep-105',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-17',
+                        rigId: 'RIG-JD02',
+                        operator: 'Hendra Wijaya',
+                        holes: [
+                            { holeId: 'BHD-10', from: 18.0, to: 25.0, meters: 7.0 }
+                        ],
+                        totalMeters: 7.0,
+                        fuel: 60,
+                        statuses: ['Maintenance'],
+                        notes: 'Penggantian seal pompa hidrolik & kalibrasi tekanan.'
+                    },
+                    {
+                        id: 'rep-106',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-18',
+                        rigId: 'RIG-JD02',
+                        operator: 'Hendra Wijaya',
+                        holes: [
+                            { holeId: 'BHD-10', from: 25.0, to: 41.0, meters: 16.0 }
+                        ],
+                        totalMeters: 16.0,
+                        fuel: 95,
+                        statuses: ['EOH', 'Maintenance'],
+                        notes: 'BHD-10 selesai, sore hari perbaikan gearbox spindle.'
+                    },
+                    {
+                        id: 'rep-107',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-19',
+                        rigId: 'RIG-JD02',
+                        operator: 'Hendra Wijaya',
+                        holes: [
+                            { holeId: 'BHD-11', from: 0, to: 22.0, meters: 22.0 }
+                        ],
+                        totalMeters: 22.0,
+                        fuel: 105,
+                        statuses: ['Moving', 'Continue Hole', 'Maintenance'],
+                        notes: 'Overheat radiator saat siang hari.'
+                    },
+                    {
+                        id: 'rep-108',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-17',
+                        rigId: 'RIG-JD03',
+                        operator: 'Rizky Pratama',
+                        holes: [
+                            { holeId: 'BHD-20', from: 0, to: 46.5, meters: 46.5 }
+                        ],
+                        totalMeters: 46.5,
+                        fuel: 125,
+                        statuses: ['EOH', 'Moving'],
+                        notes: 'Pengeboran lancar tanpa kendala.'
+                    },
+                    {
+                        id: 'rep-109',
+                        projectId: 'proj-morowali',
+                        date: '2026-11-18',
+                        rigId: 'RIG-JD03',
+                        operator: 'Rizky Pratama',
+                        holes: [
+                            { holeId: 'BHD-21', from: 0, to: 51.0, meters: 51.0 }
+                        ],
+                        totalMeters: 51.0,
+                        fuel: 130,
+                        statuses: ['EOH'],
+                        notes: 'Penetrasi cepat di zona limonit.'
+                    },
+                    {
+                        id: 'rep-201',
+                        projectId: 'proj-wedabay',
+                        date: '2026-11-17',
+                        rigId: 'RIG-WB01',
+                        operator: 'Ahmad Fauzi',
+                        holes: [
+                            { holeId: 'WBN-01', from: 0, to: 42.0, meters: 42.0 },
+                            { holeId: 'WBN-02', from: 0, to: 26.5, meters: 26.5 }
+                        ],
+                        totalMeters: 68.5,
+                        fuel: 160,
+                        statuses: ['EOH', 'Moving', 'Continue Hole'],
+                        notes: 'Produksi tinggi shift pagi-sore.'
+                    },
+                    {
+                        id: 'rep-202',
+                        projectId: 'proj-wedabay',
+                        date: '2026-11-18',
+                        rigId: 'RIG-WB01',
+                        operator: 'Ahmad Fauzi',
+                        holes: [
+                            { holeId: 'WBN-02', from: 26.5, to: 55.0, meters: 28.5 },
+                            { holeId: 'WBN-03', from: 0, to: 35.0, meters: 35.0 }
+                        ],
+                        totalMeters: 63.5,
+                        fuel: 155,
+                        statuses: ['EOH', 'Continue Hole'],
+                        notes: 'Kondisi cuaca cerah, akses jalan mantap.'
+                    },
+                    {
+                        id: 'rep-203',
+                        projectId: 'proj-wedabay',
+                        date: '2026-11-17',
+                        rigId: 'RIG-WB02',
+                        operator: 'Dedi Kurniawan',
+                        holes: [
+                            { holeId: 'WBN-08', from: 0, to: 19.0, meters: 19.0 }
+                        ],
+                        totalMeters: 19.0,
+                        fuel: 90,
+                        statuses: ['Continue Hole', 'Maintenance'],
+                        notes: 'Penggantian wireline hoist cable.'
+                    },
+                    {
+                        id: 'rep-204',
+                        projectId: 'proj-wedabay',
+                        date: '2026-11-18',
+                        rigId: 'RIG-WB02',
+                        operator: 'Dedi Kurniawan',
+                        holes: [
+                            { holeId: 'WBN-08', from: 19.0, to: 39.0, meters: 20.0 }
+                        ],
+                        totalMeters: 20.0,
+                        fuel: 100,
+                        statuses: ['EOH', 'Maintenance'],
+                        notes: 'Selesai WBN-08, lanjut servis berkala mesin diesel.'
+                    },
+                    {
+                        id: 'rep-301',
+                        projectId: 'proj-sorowako',
+                        date: '2026-11-18',
+                        rigId: 'RIG-SR01',
+                        operator: 'Syarifuddin',
+                        holes: [
+                            { holeId: 'SRW-14', from: 0, to: 47.0, meters: 47.0 }
+                        ],
+                        totalMeters: 47.0,
+                        fuel: 120,
+                        statuses: ['EOH', 'Moving'],
+                        notes: 'Titik bor selesai sesuai target geologi.'
+                    },
+                    {
+                        id: 'rep-302',
+                        projectId: 'proj-sorowako',
+                        date: '2026-11-18',
+                        rigId: 'RIG-SR02',
+                        operator: 'Agus Salim',
+                        holes: [
+                            { holeId: 'SRW-19', from: 0, to: 33.5, meters: 33.5 }
+                        ],
+                        totalMeters: 33.5,
+                        fuel: 110,
+                        statuses: ['Continue Hole'],
+                        notes: 'Formasi boulder keras di kedalaman 28m.'
+                    }
+                ]
+            };
+        }
+
+        // =========================================================================
+        // 2. SUPABASE + LOCALSTORAGE TIMESTAMP-SAFE SYNC ENGINE
+        // =========================================================================
+        function sanitizeUrl(rawUrl) {
+            const trimmed = (rawUrl || DEFAULT_SUPABASE_URL).trim().replace(/\/+$/, '');
+            return trimmed.replace(/\/rest\/v1$/i, '');
+        }
+
+        function loadSupabaseConfig() {
+            try {
+                const raw = localStorage.getItem(SB_CONFIG_STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    sbConfig.url = sanitizeUrl(parsed.url || DEFAULT_SUPABASE_URL);
+                    sbConfig.anonKey = (parsed.anonKey || '').trim();
+                } else {
+                    sbConfig.url = DEFAULT_SUPABASE_URL;
+                    sbConfig.anonKey = '';
+                }
+            } catch (_) {
+                sbConfig = { url: DEFAULT_SUPABASE_URL, anonKey: '' };
+            }
+
+            if (sbConfig.url && sbConfig.anonKey && window.supabase) {
+                try {
+                    sbClient = window.supabase.createClient(sbConfig.url, sbConfig.anonKey);
+                } catch (err) {
+                    console.warn('Gagal inisialisasi Supabase client:', err);
+                    sbClient = null;
+                }
+            } else {
+                sbClient = null;
+            }
+        }
+
+        function toggleSupabaseModal(show) {
+            const modal = document.getElementById('supabase-config-modal');
+            if (show) {
+                document.getElementById('sb-url-input').value = sbConfig.url || DEFAULT_SUPABASE_URL;
+                document.getElementById('sb-key-input').value = sbConfig.anonKey || '';
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                lucide.createIcons();
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        async function handleSaveSupabaseConfig(e) {
+            e.preventDefault();
+            const url = sanitizeUrl(document.getElementById('sb-url-input').value);
+            const anonKey = document.getElementById('sb-key-input').value.trim();
+
+            sbConfig = { url, anonKey };
+            localStorage.setItem(SB_CONFIG_STORAGE_KEY, JSON.stringify(sbConfig));
+            loadSupabaseConfig();
+            toggleSupabaseModal(false);
+
+            if (sbClient) {
+                showToast('Konfigurasi Supabase disimpan. Menyinkronkan data...', 'info');
+                await syncOnStartupOrManual(true);
+            } else {
+                setSyncStatus('Mode Lokal Saja');
+                showToast('Key kosong: aplikasi berjalan dengan penyimpanan lokal.', 'info');
+            }
+        }
+
+        function clearSupabaseConfig() {
+            sbConfig = { url: DEFAULT_SUPABASE_URL, anonKey: '' };
+            localStorage.setItem(SB_CONFIG_STORAGE_KEY, JSON.stringify(sbConfig));
+            sbClient = null;
+            toggleSupabaseModal(false);
+            setSyncStatus('Mode Lokal Saja');
+            showToast('Koneksi cloud dihapus. Data tetap aman di cadangan lokal.', 'info');
+        }
+
+        function setLoadingBanner(show, text = 'Menyinkronkan data...') {
+            const bar = document.getElementById('global-loading-bar');
+            const txt = document.getElementById('global-loading-text');
+            if (txt) txt.textContent = text;
+            if (bar) {
+                bar.classList.toggle('hidden', !show);
+            }
+        }
+
+        function setSyncStatus(text) {
+            const el = document.getElementById('sync-status-badge');
+            const elMob = document.getElementById('sync-status-badge-mobile');
+            if (el) el.textContent = text;
+            if (elMob) elMob.textContent = text;
+        }
+
+        function isValidStatePayload(obj) {
+            return obj && typeof obj === 'object' && Array.isArray(obj.projects) && Array.isArray(obj.reports);
+        }
+
+        function normalizeSiteStatus(status) {
+            if (status === 'On Hold' || status === 'Completed' || status === 'Active') return status;
+            return 'Active';
+        }
+
+        function getSiteStatusBadgeHTML(status) {
+            const st = normalizeSiteStatus(status);
+            if (st === 'Completed') {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">Completed</span>`;
+            }
+            if (st === 'On Hold') {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">On Hold</span>`;
+            }
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Active</span>`;
+        }
+
+        function normalizeState(rawObj, fallback) {
+            const base = isValidStatePayload(rawObj) ? rawObj : fallback;
+            const normalizedProjects = (Array.isArray(base.projects) ? base.projects : []).map((p, idx) => ({
+                ...p,
+                code: (p.code || `SITE-0${idx + 1}`).toString().toUpperCase(),
+                location: p.location || 'Lokasi Site',
+                client: p.client || 'Klien',
+                targetVolume: Number(p.targetVolume || 0),
+                status: normalizeSiteStatus(p.status),
+                rigs: Array.isArray(p.rigs) ? p.rigs : []
+            }));
+
+            const normalized = {
+                updatedAt: base.updatedAt || new Date().toISOString(),
+                selectedHomeSiteId: base.selectedHomeSiteId || null,
+                selectedProjectSiteId: base.selectedProjectSiteId || null,
+                projects: normalizedProjects,
+                reports: Array.isArray(base.reports) ? base.reports : []
+            };
+
+            if (!normalized.projects.some(p => p.id === normalized.selectedHomeSiteId)) {
+                normalized.selectedHomeSiteId = normalized.projects[0]?.id || null;
+            }
+            if (!normalized.projects.some(p => p.id === normalized.selectedProjectSiteId)) {
+                normalized.selectedProjectSiteId = normalized.projects[0]?.id || null;
+            }
+            return normalized;
+        }
+
+        function saveLocalBackup(stateObj) {
+            try {
+                localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(stateObj));
+            } catch (err) {
+                console.warn('Gagal menyimpan cadangan localStorage:', err);
+            }
+        }
+
+        function loadLocalBackup() {
+            try {
+                const raw = localStorage.getItem(LOCAL_BACKUP_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                return isValidStatePayload(parsed) ? parsed : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        async function fetchCloudPayload() {
+            if (!sbClient) return null;
+            const { data, error } = await sbClient
+                .from('ddr_state')
+                .select('payload, updated_at')
+                .eq('id', DDR_ROW_ID)
+                .single();
+
+            if (error) throw error;
+            if (data && isValidStatePayload(data.payload)) {
+                const payloadWithTime = {
+                    ...data.payload,
+                    updatedAt: data.payload.updatedAt || data.updated_at || new Date().toISOString()
+                };
+                return payloadWithTime;
+            }
+            return null;
+        }
+
+        async function pushCloudPayload(stateObj) {
+            if (!sbClient) return false;
+            const stamp = stateObj.updatedAt || new Date().toISOString();
+            const { error } = await sbClient
+                .from('ddr_state')
+                .upsert(
+                    {
+                        id: DDR_ROW_ID,
+                        payload: { ...stateObj, updatedAt: stamp },
+                        updated_at: stamp
+                    },
+                    { onConflict: 'id' }
+                );
+
+            if (error) throw error;
+            return true;
+        }
+
+        /**
+         * Memuat data saat aplikasi dibuka atau disinkronkan secara manual.
+         * Mencegah data lama di localStorage menimpa data lebih baru di Supabase:
+         * - Data Supabase selalu diprioritaskan jika lebih baru atau tidak ada pending offline yang lebih baru.
+         * - Tidak memanggil pushCloudPayload saat startup kecuali memang ada perubahan offline tertunda yang lebih baru.
+         */
+        async function syncOnStartupOrManual(isManual = false) {
+            if (isSyncing) return;
+            isSyncing = true;
+            const icon = document.getElementById('sync-icon');
+            if (icon) icon.classList.add('animate-spin');
+
+            const demoFallback = getInitialDemoData();
+            const localData = loadLocalBackup();
+            const hasPendingSync = localStorage.getItem(PENDING_SYNC_KEY) === 'true';
+
+            if (!sbClient) {
+                appState = normalizeState(localData || demoFallback, demoFallback);
+                saveLocalBackup(appState);
+                setSyncStatus('Mode Lokal (Atur Key)');
+                if (icon) icon.classList.remove('animate-spin');
+                isSyncing = false;
+                refreshAllViews();
+                if (isManual) showToast('Supabase belum dikonfigurasi. Menggunakan data lokal.', 'info');
+                return;
+            }
+
+            setLoadingBanner(true, isManual ? 'Menarik & menyinkronkan data dengan Supabase...' : 'Memuat data terbaru dari Supabase...');
+
+            try {
+                const cloudData = await fetchCloudPayload();
+
+                if (cloudData) {
+                    const cloudTime = new Date(cloudData.updatedAt || 0).getTime();
+                    const localTime = new Date(localData?.updatedAt || 0).getTime();
+
+                    // Hanya dorong data lokal ke cloud jika memang ada perubahan offline tertunda yang timestamp-nya lebih baru
+                    if (hasPendingSync && localData && localTime > cloudTime) {
+                        appState = normalizeState(localData, demoFallback);
+                        saveLocalBackup(appState);
+                        await pushCloudPayload(appState);
+                        localStorage.removeItem(PENDING_SYNC_KEY);
+                        setSyncStatus('Tersinkron ke Cloud');
+                        if (isManual) showToast('Perubahan lokal berhasil disinkronkan ke Supabase!', 'success');
+                    } else {
+                        // Data Supabase dijadikan sumber utama dan menimpa cache lokal agar tidak basi
+                        appState = normalizeState(cloudData, demoFallback);
+                        saveLocalBackup(appState);
+                        localStorage.removeItem(PENDING_SYNC_KEY);
+                        setSyncStatus('Tersinkron Cloud');
+                        if (isManual) showToast('Data terbaru berhasil dimuat dari Supabase!', 'success');
+                    }
+                } else {
+                    // Baris di Supabase masih kosong ({})
+                    if (localData) {
+                        appState = normalizeState(localData, demoFallback);
+                        saveLocalBackup(appState);
+                        await pushCloudPayload(appState);
+                        localStorage.removeItem(PENDING_SYNC_KEY);
+                        setSyncStatus('Tersinkron Cloud');
+                    } else {
+                        appState = normalizeState(demoFallback, demoFallback);
+                        saveLocalBackup(appState);
+                        setSyncStatus('Demo Lokal (Belum Di-push)');
+                    }
+                }
+            } catch (err) {
+                console.warn('Gagal sinkronisasi Supabase, memakai cadangan lokal:', err.message || err);
+                appState = normalizeState(localData || demoFallback, demoFallback);
+                saveLocalBackup(appState);
+                setSyncStatus(hasPendingSync ? 'Pending Sync (Lokal)' : 'Offline / Cadangan Lokal');
+                if (isManual) {
+                    showToast('Gagal terhubung ke Supabase. Menampilkan cadangan lokal.', 'error');
+                }
+            } finally {
+                setLoadingBanner(false);
+                if (icon) icon.classList.remove('animate-spin');
+                isSyncing = false;
+                refreshAllViews();
+            }
+        }
+
+        async function manualCloudSync() {
+            await syncOnStartupOrManual(true);
+        }
+
+        /**
+         * Menyimpan perubahan pengguna: selalu simpan ke localStorage dulu,
+         * lalu kirim ke Supabase jika tersedia.
+         */
+        async function persistChanges() {
+            appState.updatedAt = new Date().toISOString();
+            saveLocalBackup(appState);
+
+            if (!sbClient) {
+                setSyncStatus('Tersimpan Lokal');
+                return;
+            }
+
+            setSyncStatus('Menyimpan...');
+            try {
+                await pushCloudPayload(appState);
+                localStorage.removeItem(PENDING_SYNC_KEY);
+                setSyncStatus('Tersinkron Cloud');
+            } catch (err) {
+                console.warn('Gagal kirim ke Supabase, disimpan sebagai pending sync:', err.message || err);
+                localStorage.setItem(PENDING_SYNC_KEY, 'true');
+                setSyncStatus('Pending Sync (Lokal)');
+                showToast('Tersimpan di perangkat lokal. Akan disinkronkan saat koneksi cloud tersedia.', 'info');
+            }
+        }
+
+        function confirmResetDemo() {
+            showConfirmModal(
+                'Reset ke Data Awal Demo?',
+                'Seluruh data project dan laporan harian yang Anda input akan dikembalikan ke data contoh awal. Lanjutkan?',
+                async () => {
+                    appState = getInitialDemoData();
+                    appState.updatedAt = new Date().toISOString();
+                    saveLocalBackup(appState);
+                    if (sbClient) {
+                        try {
+                            await pushCloudPayload(appState);
+                            localStorage.removeItem(PENDING_SYNC_KEY);
+                            setSyncStatus('Tersinkron Cloud');
+                        } catch (_) {
+                            localStorage.setItem(PENDING_SYNC_KEY, 'true');
+                            setSyncStatus('Pending Sync (Lokal)');
+                        }
+                    }
+                    refreshAllViews();
+                    showToast('Data berhasil dikembalikan ke pengaturan awal demo.', 'success');
+                }
+            );
+        }
+
+        // =========================================================================
+        // 3. UI UTILITIES (TOAST, MODAL, FORMATTER, NAVIGATION)
+        // =========================================================================
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = {
+                success: 'bg-navy-900 text-white border-emerald-500',
+                error: 'bg-red-950 text-white border-red-500',
+                info: 'bg-navy-900 text-white border-amber-500'
+            };
+            const iconName = type === 'error' ? 'alert-circle' : (type === 'info' ? 'info' : 'check-circle-2');
+            const iconColor = type === 'error' ? 'text-red-400' : (type === 'info' ? 'text-amber-400' : 'text-emerald-400');
+
+            toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border-l-4 ${colors[type] || colors.success} transform transition-all duration-300 translate-y-0 opacity-100`;
+            toast.innerHTML = `
+                <i data-lucide="${iconName}" class="w-5 h-5 ${iconColor} shrink-0"></i>
+                <p class="text-xs sm:text-sm font-medium leading-snug">${message}</p>
+            `;
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function showConfirmModal(title, message, onConfirm) {
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = message;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            const okBtn = document.getElementById('confirm-ok-btn');
+            const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+            };
+
+            cancelBtn.onclick = cleanup;
+            okBtn.onclick = () => {
+                cleanup();
+                if (typeof onConfirm === 'function') onConfirm();
+            };
+        }
+
+        function formatNumber(num, decimals = 1) {
+            return Number(num || 0).toLocaleString('id-ID', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function formatDateID(isoDate) {
+            if (!isoDate) return '-';
+            const [y, m, d] = isoDate.split('-');
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+            return `${d} ${months[parseInt(m, 10) - 1]} ${y}`;
+        }
+
+        function getStatusBadgeHTML(status) {
+            const map = {
+                'Continue Hole': 'bg-blue-100 text-blue-800 border-blue-200',
+                'EOH': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                'Moving': 'bg-amber-100 text-amber-800 border-amber-200',
+                'Maintenance': 'bg-red-100 text-red-800 border-red-200'
+            };
+            const cls = map[status] || 'bg-slate-100 text-slate-700 border-slate-200';
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${cls}">${status}</span>`;
+        }
+
+        function switchTab(tabName) {
+            ['home', 'project', 'rekap'].forEach(t => {
+                document.getElementById(`page-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`nav-${t}`);
+                btn.classList.remove('tab-active');
+                btn.classList.add('text-slate-300', 'hover:text-white');
+            });
+
+            document.getElementById(`page-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`nav-${tabName}`);
+            activeBtn.classList.add('tab-active');
+            activeBtn.classList.remove('text-slate-300', 'hover:text-white');
+
+            if (tabName === 'home') renderHomePage();
+            if (tabName === 'project') renderProjectPage();
+            if (tabName === 'rekap') renderRekapPage();
+
+            lucide.createIcons();
+        }
+
+        async function goToProjectInput() {
+            appState.selectedProjectSiteId = appState.selectedHomeSiteId;
+            await persistChanges();
+            switchTab('project');
+            document.getElementById('form-ddr').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // =========================================================================
+        // 4. LOGIKA HALAMAN 1: INDEX / HOME
+        // =========================================================================
+        async function selectHomeSite(projectId) {
+            appState.selectedHomeSiteId = projectId;
+            await persistChanges();
+            renderHomePage();
+        }
+
+        function renderHomePage() {
+            const selectEl = document.getElementById('home-site-select');
+            const cardsContainer = document.getElementById('home-site-cards');
+
+            if (appState.projects.length === 0) {
+                selectEl.innerHTML = `<option value="">Belum ada site project</option>`;
+                cardsContainer.innerHTML = `<div class="col-span-3 bg-slate-50 border border-dashed border-slate-300 rounded-xl p-6 text-center text-sm text-slate-500">Belum ada project site. Buka tab <strong>2. Project & Input DDR</strong> untuk menambah site baru.</div>`;
+                document.getElementById('home-selected-dashboard').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('home-selected-dashboard').classList.remove('hidden');
+
+            selectEl.innerHTML = appState.projects.map(p =>
+                `<option value="${p.id}" ${p.id === appState.selectedHomeSiteId ? 'selected' : ''}>[${p.code}] ${p.location} (${p.client})</option>`
+            ).join('');
+
+            cardsContainer.innerHTML = appState.projects.map(p => {
+                const projReports = appState.reports.filter(r => r.projectId === p.id);
+                const totalM = projReports.reduce((sum, r) => sum + Number(r.totalMeters || 0), 0);
+                const pct = p.targetVolume > 0 ? Math.min(100, (totalM / p.targetVolume) * 100) : 0;
+                const isSelected = p.id === appState.selectedHomeSiteId;
+
+                return `
+                    <div onclick="selectHomeSite('${p.id}')" class="cursor-pointer rounded-xl p-4 border-2 transition-all ${isSelected ? 'border-amber-500 bg-amber-50/40 shadow-sm' : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white'}">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="text-[10px] font-mono font-bold text-slate-400 uppercase">${p.code}</span>
+                                <h4 class="font-bold text-sm text-slate-900 truncate">${p.location}</h4>
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                ${getSiteStatusBadgeHTML(p.status)}
+                                ${isSelected ? '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-500 text-navy-950">Aktif</span>' : ''}
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-500 truncate mt-0.5">${p.client}</p>
+                        <div class="mt-3 flex items-center justify-between text-xs font-mono">
+                            <span class="font-bold text-slate-800">${formatNumber(totalM)} / ${formatNumber(p.targetVolume, 0)} m</span>
+                            <span class="font-bold text-orange-600">${formatNumber(pct)}%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                            <div class="bg-amber-500 h-1.5 rounded-full" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const activeProject = appState.projects.find(p => p.id === appState.selectedHomeSiteId);
+            if (!activeProject) return;
+
+            const siteReports = appState.reports.filter(r => r.projectId === activeProject.id);
+            const totalVolume = siteReports.reduce((acc, r) => acc + Number(r.totalMeters || 0), 0);
+            const totalFuel = siteReports.reduce((acc, r) => acc + Number(r.fuel || 0), 0);
+            const targetVol = Number(activeProject.targetVolume || 0);
+            const progressPct = targetVol > 0 ? (totalVolume / targetVol) * 100 : 0;
+            const totalEOH = siteReports.filter(r => Array.isArray(r.statuses) && r.statuses.includes('EOH')).length;
+
+            const activeRigIdsSet = new Set(siteReports.map(r => r.rigId));
+            const totalRegisteredRigs = activeProject.rigs.length;
+            const runningRigsCount = activeRigIdsSet.size > 0 ? activeRigIdsSet.size : totalRegisteredRigs;
+
+            document.getElementById('home-badge-client').textContent = `Klien: ${activeProject.client}`;
+            document.getElementById('home-badge-rigs').textContent = `${totalRegisteredRigs} Unit Rig • ${normalizeSiteStatus(activeProject.status)}`;
+            document.getElementById('home-site-title').textContent = `[${activeProject.code}] ${activeProject.location}`;
+
+            document.getElementById('kpi-total-meter').textContent = `${formatNumber(totalVolume)} m`;
+            document.getElementById('kpi-target-meter').textContent = `${formatNumber(targetVol, 0)} m`;
+            document.getElementById('kpi-progress-pct').textContent = `${formatNumber(progressPct)}%`;
+            document.getElementById('kpi-progress-bar').style.width = `${Math.min(100, progressPct)}%`;
+
+            document.getElementById('kpi-active-rigs').textContent = `${runningRigsCount} / ${totalRegisteredRigs} Unit`;
+            document.getElementById('kpi-active-rigs-desc').textContent = `${runningRigsCount} unit rig aktif beroperasi pada periode ini`;
+
+            document.getElementById('kpi-total-fuel').textContent = `${formatNumber(totalFuel, 0)} L`;
+            const fuelRatio = totalVolume > 0 ? (totalFuel / totalVolume) : 0;
+            document.getElementById('kpi-fuel-ratio').innerHTML = `Rasio konsumsi: <span class="font-mono font-semibold text-slate-700">${formatNumber(fuelRatio, 2)} L/m</span>`;
+
+            document.getElementById('kpi-total-eoh').textContent = `${totalEOH} EOH`;
+            document.getElementById('kpi-total-logs').innerHTML = `Dari <span class="font-mono font-semibold text-slate-700">${siteReports.length}</span> laporan harian tercatat`;
+
+            const rigStats = activeProject.rigs.map(rig => {
+                const rigReps = siteReports
+                    .filter(r => r.rigId === rig.id)
+                    .sort((a, b) => b.date.localeCompare(a.date));
+
+                const meters = rigReps.reduce((s, r) => s + Number(r.totalMeters || 0), 0);
+                const fuel = rigReps.reduce((s, r) => s + Number(r.fuel || 0), 0);
+                const latestReport = rigReps[0];
+                const lastOperator = latestReport ? latestReport.operator : rig.operator;
+                const lastStatuses = latestReport ? latestReport.statuses : ['Standby'];
+
+                return {
+                    rigId: rig.id,
+                    operator: lastOperator,
+                    totalMeters: meters,
+                    totalFuel: fuel,
+                    lastStatuses: lastStatuses,
+                    reportCount: rigReps.length
+                };
+            });
+
+            siteReports.forEach(r => {
+                if (!rigStats.some(rs => rs.rigId === r.rigId)) {
+                    const rigReps = siteReports.filter(x => x.rigId === r.rigId).sort((a, b) => b.date.localeCompare(a.date));
+                    rigStats.push({
+                        rigId: r.rigId,
+                        operator: rigReps[0]?.operator || '-',
+                        totalMeters: rigReps.reduce((s, x) => s + Number(x.totalMeters || 0), 0),
+                        totalFuel: rigReps.reduce((s, x) => s + Number(x.fuel || 0), 0),
+                        lastStatuses: rigReps[0]?.statuses || ['-'],
+                        reportCount: rigReps.length
+                    });
+                }
+            });
+
+            const tbody = document.getElementById('home-rig-table-body');
+            if (rigStats.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 text-xs">Belum ada unit rig terdaftar pada site ini.</td></tr>`;
+            } else {
+                tbody.innerHTML = rigStats.map(rs => `
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <td class="py-3.5 px-3 font-mono font-bold text-slate-900">${rs.rigId}</td>
+                        <td class="py-3.5 px-3 text-slate-700 font-medium">${rs.operator}</td>
+                        <td class="py-3.5 px-3 text-right font-mono font-extrabold text-orange-600">${formatNumber(rs.totalMeters)} m</td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-600">${formatNumber(rs.totalFuel, 0)} L</td>
+                        <td class="py-3.5 px-3">
+                            <div class="flex flex-wrap gap-1">
+                                ${rs.lastStatuses.map(st => getStatusBadgeHTML(st)).join('')}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            renderHomeChart(rigStats);
+            lucide.createIcons();
+        }
+
+        function renderHomeChart(rigStats) {
+            const canvas = document.getElementById('homeRigChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (homeChartInstance) {
+                homeChartInstance.destroy();
+            }
+
+            homeChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: rigStats.map(r => r.rigId),
+                    datasets: [{
+                        label: 'Total Perolehan (Meter)',
+                        data: rigStats.map(r => r.totalMeters),
+                        backgroundColor: ['#f59e0b', '#0f172a', '#ea580c', '#334155', '#d97706'],
+                        borderRadius: 8,
+                        maxBarThickness: 48
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => ` Perolehan: ${formatNumber(context.raw)} meter`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#f1f5f9' },
+                            ticks: {
+                                font: { family: 'JetBrains Mono', size: 11 },
+                                callback: (val) => val + ' m'
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                font: { family: 'JetBrains Mono', weight: 'bold', size: 11 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // =========================================================================
+        // 5. LOGIKA HALAMAN 2: PROJECT CRUD & INPUT DAILY DRILLING REPORT (DDR)
+        // =========================================================================
+        function toggleSiteDirectoryPanel() {
+            const panel = document.getElementById('site-directory-panel');
+            panel.classList.toggle('hidden');
+        }
+
+        function openCreateProjectModal() {
+            document.getElementById('np-edit-id').value = '';
+            document.getElementById('project-modal-title').textContent = 'Tambah Project Site Baru';
+            document.getElementById('btn-save-project-modal').textContent = 'Simpan Project Site';
+            document.getElementById('form-new-project').reset();
+            document.getElementById('np-status').value = 'Active';
+            document.getElementById('np-rig-count').value = '2';
+
+            const modal = document.getElementById('new-project-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            generateNewProjectRigInputs(2, []);
+            lucide.createIcons();
+        }
+
+        function openEditProjectModal(projectId) {
+            const proj = appState.projects.find(p => p.id === projectId);
+            if (!proj) return;
+
+            document.getElementById('np-edit-id').value = proj.id;
+            document.getElementById('project-modal-title').textContent = `Edit Project Site — ${proj.location}`;
+            document.getElementById('btn-save-project-modal').textContent = 'Update Project Site';
+            document.getElementById('np-code').value = proj.code || '';
+            document.getElementById('np-location').value = proj.location || '';
+            document.getElementById('np-client').value = proj.client || '';
+            document.getElementById('np-status').value = normalizeSiteStatus(proj.status);
+            document.getElementById('np-target').value = proj.targetVolume || 0;
+
+            const existingRigs = Array.isArray(proj.rigs) && proj.rigs.length > 0 ? proj.rigs : [{ id: 'RIG-01', operator: 'Operator Lapangan' }];
+            document.getElementById('np-rig-count').value = existingRigs.length;
+
+            const modal = document.getElementById('new-project-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            generateNewProjectRigInputs(existingRigs.length, existingRigs);
+            lucide.createIcons();
+        }
+
+        function toggleNewProjectModal(show) {
+            const modal = document.getElementById('new-project-modal');
+            if (show) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                if (!document.getElementById('np-edit-id').value) {
+                    generateNewProjectRigInputs(document.getElementById('np-rig-count').value || 2, []);
+                }
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                document.getElementById('np-edit-id').value = '';
+            }
+        }
+
+        function generateNewProjectRigInputs(count, presetRigs = []) {
+            const n = Math.max(1, Math.min(20, parseInt(count, 10) || 1));
+            const container = document.getElementById('np-rig-slots');
+            let html = '';
+            for (let i = 1; i <= n; i++) {
+                const pad = String(i).padStart(2, '0');
+                const preset = presetRigs[i - 1];
+                const rigVal = preset ? preset.id : `RIG-${pad}`;
+                const opVal = preset ? preset.operator : '';
+
+                html += `
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">ID Unit Rig #${i}</label>
+                            <input type="text" name="np-rig-id[]" required value="${rigVal}" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">Nama Operator #${i}</label>
+                            <input type="text" name="np-rig-op[]" required placeholder="Nama Operator" value="${opVal}" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        async function handleSaveProject(e) {
+            e.preventDefault();
+            const editId = document.getElementById('np-edit-id').value.trim();
+            const code = document.getElementById('np-code').value.trim().toUpperCase();
+            const location = document.getElementById('np-location').value.trim();
+            const client = document.getElementById('np-client').value.trim();
+            const status = normalizeSiteStatus(document.getElementById('np-status').value);
+            const targetVolume = parseFloat(document.getElementById('np-target').value);
+
+            const rigIds = Array.from(document.getElementsByName('np-rig-id[]')).map(el => el.value.trim().toUpperCase());
+            const rigOps = Array.from(document.getElementsByName('np-rig-op[]')).map(el => el.value.trim());
+
+            const rigs = rigIds.map((id, idx) => ({
+                id: id || `RIG-0${idx + 1}`,
+                operator: rigOps[idx] || 'Operator Lapangan'
+            }));
+
+            if (editId) {
+                const idx = appState.projects.findIndex(p => p.id === editId);
+                if (idx !== -1) {
+                    appState.projects[idx] = {
+                        ...appState.projects[idx],
+                        code,
+                        location,
+                        client,
+                        status,
+                        targetVolume,
+                        rigs
+                    };
+                }
+                appState.selectedProjectSiteId = editId;
+                appState.selectedHomeSiteId = editId;
+                await persistChanges();
+                toggleNewProjectModal(false);
+                refreshAllViews();
+                showToast(`Project "${location}" berhasil diperbarui!`, 'success');
+                return;
+            }
+
+            const newProj = {
+                id: 'proj-' + Date.now(),
+                code,
+                location,
+                client,
+                targetVolume,
+                status,
+                rigs
+            };
+
+            appState.projects.push(newProj);
+            appState.selectedProjectSiteId = newProj.id;
+            appState.selectedHomeSiteId = newProj.id;
+            await persistChanges();
+
+            document.getElementById('form-new-project').reset();
+            toggleNewProjectModal(false);
+            refreshAllViews();
+            showToast(`Project "${location}" berhasil ditambahkan!`, 'success');
+        }
+
+        function deleteProjectSite(projectId) {
+            const proj = appState.projects.find(p => p.id === projectId);
+            if (!proj) return;
+
+            const relatedReportsCount = appState.reports.filter(r => r.projectId === projectId).length;
+            const warningText = relatedReportsCount > 0
+                ? `Site "${proj.location}" (${proj.code}) memiliki ${relatedReportsCount} laporan harian (DDR). Menghapus site ini akan menghapus data site beserta seluruh laporan DDR terkait secara permanen.`
+                : `Apakah Anda yakin ingin menghapus site "${proj.location}" (${proj.code})?`;
+
+            showConfirmModal(
+                `Hapus Site "${proj.location}"?`,
+                warningText,
+                async () => {
+                    appState.projects = appState.projects.filter(p => p.id !== projectId);
+                    appState.reports = appState.reports.filter(r => r.projectId !== projectId);
+
+                    const fallbackId = appState.projects[0]?.id || null;
+                    if (appState.selectedProjectSiteId === projectId) {
+                        appState.selectedProjectSiteId = fallbackId;
+                    }
+                    if (appState.selectedHomeSiteId === projectId) {
+                        appState.selectedHomeSiteId = fallbackId;
+                    }
+
+                    await persistChanges();
+                    resetDDRForm();
+                    refreshAllViews();
+                    showToast(`Site "${proj.location}" dan data terkait telah dihapus.`, 'info');
+                }
+            );
+        }
+
+        async function selectProjectTab(projectId) {
+            appState.selectedProjectSiteId = projectId;
+            await persistChanges();
+            resetDDRForm();
+            renderProjectPage();
+        }
+
+        function toggleAddRigInline() {
+            const panel = document.getElementById('manage-rigs-panel');
+            panel.classList.toggle('hidden');
+        }
+
+        async function handleAddRigToProject(e) {
+            e.preventDefault();
+            const proj = appState.projects.find(p => p.id === appState.selectedProjectSiteId);
+            if (!proj) return;
+
+            const rigId = document.getElementById('add-rig-id').value.trim().toUpperCase();
+            const rigOp = document.getElementById('add-rig-op').value.trim();
+
+            if (proj.rigs.some(r => r.id === rigId)) {
+                showToast(`ID Unit ${rigId} sudah terdaftar di project ini!`, 'error');
+                return;
+            }
+
+            proj.rigs.push({ id: rigId, operator: rigOp });
+            await persistChanges();
+            document.getElementById('add-rig-id').value = '';
+            document.getElementById('add-rig-op').value = '';
+            renderProjectPage();
+            showToast(`Unit ${rigId} berhasil ditambahkan ke project.`, 'success');
+        }
+
+        function removeRigFromProject(rigId) {
+            const proj = appState.projects.find(p => p.id === appState.selectedProjectSiteId);
+            if (!proj) return;
+
+            if (proj.rigs.length <= 1) {
+                showToast('Minimal harus ada 1 unit rig dalam project.', 'error');
+                return;
+            }
+
+            showConfirmModal(
+                `Hapus Unit ${rigId}?`,
+                `Unit ${rigId} akan dihapus dari daftar armada aktif project ini (riwayat laporan lama tetap tersimpan).`,
+                async () => {
+                    proj.rigs = proj.rigs.filter(r => r.id !== rigId);
+                    await persistChanges();
+                    renderProjectPage();
+                    showToast(`Unit ${rigId} dihapus dari daftar armada.`, 'info');
+                }
+            );
+        }
+
+        function renderProjectPage() {
+            const tabsContainer = document.getElementById('project-tabs-list');
+            tabsContainer.innerHTML = appState.projects.map(p => {
+                const active = p.id === appState.selectedProjectSiteId;
+                return `
+                    <button onclick="selectProjectTab('${p.id}')" class="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition flex items-center gap-2 ${active ? 'bg-navy-900 text-white border-navy-900 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5 ${active ? 'text-amber-400' : 'text-slate-400'}"></i>
+                        <span>[${p.code}] ${p.location}</span>
+                    </button>
+                `;
+            }).join('');
+
+            renderSiteDirectoryTable();
+
+            const detailWrapper = document.getElementById('project-detail-wrapper');
+            const proj = appState.projects.find(p => p.id === appState.selectedProjectSiteId);
+            if (!proj) {
+                detailWrapper.classList.add('hidden');
+                lucide.createIcons();
+                return;
+            }
+            detailWrapper.classList.remove('hidden');
+
+            document.getElementById('proj-detail-code').textContent = proj.code;
+            document.getElementById('proj-detail-location').textContent = proj.location;
+            document.getElementById('proj-detail-status-badge').outerHTML = `<span id="proj-detail-status-badge">${getSiteStatusBadgeHTML(proj.status)}</span>`;
+            document.getElementById('proj-detail-client').textContent = proj.client;
+            document.getElementById('proj-detail-target').textContent = `${formatNumber(proj.targetVolume, 0)} m`;
+            document.getElementById('proj-detail-rigcount').textContent = `${proj.rigs.length} Unit`;
+            document.getElementById('history-site-name').textContent = `[${proj.code}] ${proj.location}`;
+
+            document.getElementById('project-rigs-badges').innerHTML = proj.rigs.map(r => `
+                <div class="inline-flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                    <span class="font-mono font-bold text-slate-900">${r.id}</span>
+                    <span class="text-slate-500">(${r.operator})</span>
+                    <button type="button" onclick="removeRigFromProject('${r.id}')" class="text-slate-400 hover:text-red-600 ml-1" title="Hapus Unit">
+                        <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            const rigSelect = document.getElementById('ddr-rig-select');
+            const currentVal = rigSelect.value;
+            rigSelect.innerHTML = proj.rigs.map(r =>
+                `<option value="${r.id}">${r.id} — ${r.operator}</option>`
+            ).join('');
+            if (proj.rigs.some(r => r.id === currentVal)) {
+                rigSelect.value = currentVal;
+            }
+
+            const filterRigSelect = document.getElementById('filter-history-rig');
+            filterRigSelect.innerHTML = `<option value="ALL">Semua Unit Rig</option>` +
+                proj.rigs.map(r => `<option value="${r.id}">${r.id}</option>`).join('');
+
+            const dateInput = document.getElementById('ddr-date');
+            if (!dateInput.value) {
+                dateInput.value = new Date().toISOString().split('T')[0];
+            }
+
+            onDDRRigChange();
+
+            if (document.getElementById('ddr-holes-container').children.length === 0) {
+                addHoleRow();
+            }
+
+            renderProjectHistoryTable();
+            lucide.createIcons();
+        }
+
+        function renderSiteDirectoryTable() {
+            const tbody = document.getElementById('site-directory-tbody');
+            const countEl = document.getElementById('site-directory-count');
+            if (!tbody) return;
+
+            if (countEl) countEl.textContent = `${appState.projects.length} Site`;
+
+            if (appState.projects.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-xs text-slate-400">Belum ada project site terdaftar. Klik "Tambah Project Site Baru" untuk membuat site.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = appState.projects.map(p => {
+                const reps = appState.reports.filter(r => r.projectId === p.id);
+                const achieved = reps.reduce((s, r) => s + Number(r.totalMeters || 0), 0);
+                const target = Number(p.targetVolume || 0);
+                const pct = target > 0 ? Math.min(100, (achieved / target) * 100) : 0;
+                const isSelected = p.id === appState.selectedProjectSiteId;
+
+                return `
+                    <tr class="${isSelected ? 'bg-amber-50/40' : 'hover:bg-slate-50'} transition">
+                        <td class="py-3 px-3">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800">${p.code}</span>
+                                <span class="font-bold text-slate-900">${p.location}</span>
+                            </div>
+                        </td>
+                        <td class="py-3 px-3 text-slate-700 text-xs sm:text-sm">${p.client}</td>
+                        <td class="py-3 px-3 text-center">${getSiteStatusBadgeHTML(p.status)}</td>
+                        <td class="py-3 px-3 text-right font-mono text-xs">
+                            <div class="font-bold text-slate-900">${formatNumber(achieved)} / ${formatNumber(target, 0)} m</div>
+                            <div class="text-orange-600 font-semibold">${formatNumber(pct)}%</div>
+                        </td>
+                        <td class="py-3 px-3 text-center font-mono text-xs font-bold text-slate-700">${p.rigs.length} Unit</td>
+                        <td class="py-3 px-3 text-center whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1">
+                                <button type="button" onclick="selectProjectTab('${p.id}')" title="Pilih Site" class="px-2.5 py-1 text-xs font-semibold text-navy-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Pilih</button>
+                                <button type="button" onclick="openEditProjectModal('${p.id}')" title="Edit Site" class="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition">
+                                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                                </button>
+                                <button type="button" onclick="deleteProjectSite('${p.id}')" title="Hapus Site" class="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function onDDRRigChange() {
+            const proj = appState.projects.find(p => p.id === appState.selectedProjectSiteId);
+            if (!proj) return;
+            const selectedRigId = document.getElementById('ddr-rig-select').value;
+            const rigObj = proj.rigs.find(r => r.id === selectedRigId);
+
+            if (!document.getElementById('ddr-edit-id').value && rigObj) {
+                document.getElementById('ddr-operator').value = rigObj.operator;
+            }
+            recalculateDDRTotals();
+        }
+
+        function addHoleRow(data = { holeId: '', from: '', to: '' }) {
+            const container = document.getElementById('ddr-holes-container');
+            const rowIndex = container.children.length + 1;
+            const row = document.createElement('div');
+            row.className = 'hole-row grid grid-cols-1 sm:grid-cols-12 gap-2.5 sm:gap-3 items-center bg-white p-3 sm:p-2.5 rounded-xl border border-slate-200 shadow-2xs';
+
+            const fromVal = data.from !== '' ? data.from : '';
+            const toVal = data.to !== '' ? data.to : '';
+            const diff = (fromVal !== '' && toVal !== '') ? Math.max(0, parseFloat(toVal) - parseFloat(fromVal)) : 0;
+
+            row.innerHTML = `
+                <div class="sm:col-span-3">
+                    <label class="sm:hidden block text-[10px] font-bold uppercase text-slate-400 mb-0.5">ID Hole #${rowIndex}</label>
+                    <input type="text" class="hole-id w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-mono font-bold uppercase focus:ring-2 focus:ring-amber-500 outline-none" required placeholder="Mis: DH-0${rowIndex}" value="${data.holeId}">
+                </div>
+                <div class="grid grid-cols-2 gap-2 sm:contents">
+                    <div class="sm:col-span-3">
+                        <label class="sm:hidden block text-[10px] font-bold uppercase text-slate-400 mb-0.5">From (m)</label>
+                        <input type="number" step="0.01" min="0" class="hole-from w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-mono focus:ring-2 focus:ring-amber-500 outline-none" required placeholder="0.0" value="${fromVal}" oninput="onHoleInputChange(this)">
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="sm:hidden block text-[10px] font-bold uppercase text-slate-400 mb-0.5">To (m)</label>
+                        <input type="number" step="0.01" min="0" class="hole-to w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-mono focus:ring-2 focus:ring-amber-500 outline-none" required placeholder="0.0" value="${toVal}" oninput="onHoleInputChange(this)">
+                    </div>
+                </div>
+                <div class="sm:col-span-2 flex items-center justify-between sm:justify-end bg-slate-50 sm:bg-transparent px-3 py-1.5 sm:p-0 rounded-lg">
+                    <span class="sm:hidden text-xs font-semibold text-slate-500">Meter Didapat:</span>
+                    <span class="hole-meters font-mono font-extrabold text-sm text-slate-900" data-val="${diff}">${formatNumber(diff)} m</span>
+                </div>
+                <div class="sm:col-span-1 flex justify-end sm:justify-center">
+                    <button type="button" onclick="removeHoleRow(this)" title="Hapus Baris Hole" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            `;
+
+            container.appendChild(row);
+            lucide.createIcons();
+            recalculateDDRTotals();
+        }
+
+        function removeHoleRow(btn) {
+            const container = document.getElementById('ddr-holes-container');
+            if (container.children.length <= 1) {
+                showToast('Minimal harus terdapat 1 hole dalam laporan harian.', 'info');
+                return;
+            }
+            btn.closest('.hole-row').remove();
+            recalculateDDRTotals();
+        }
+
+        function onHoleInputChange(inputEl) {
+            const row = inputEl.closest('.hole-row');
+            const fromVal = parseFloat(row.querySelector('.hole-from').value);
+            const toVal = parseFloat(row.querySelector('.hole-to').value);
+            const meterSpan = row.querySelector('.hole-meters');
+
+            let diff = 0;
+            if (!isNaN(fromVal) && !isNaN(toVal)) {
+                diff = Math.max(0, toVal - fromVal);
+            }
+            meterSpan.dataset.val = diff;
+            meterSpan.textContent = `${formatNumber(diff)} m`;
+
+            recalculateDDRTotals();
+        }
+
+        function recalculateDDRTotals() {
+            let todayMeters = 0;
+            document.querySelectorAll('.hole-meters').forEach(el => {
+                todayMeters += parseFloat(el.dataset.val || 0);
+            });
+            document.getElementById('ddr-today-total').textContent = `${formatNumber(todayMeters)} m`;
+
+            const projId = appState.selectedProjectSiteId;
+            const rigId = document.getElementById('ddr-rig-select').value;
+            const editId = document.getElementById('ddr-edit-id').value;
+
+            const pastReports = appState.reports.filter(r =>
+                r.projectId === projId &&
+                r.rigId === rigId &&
+                r.id !== editId
+            );
+            const pastTotal = pastReports.reduce((sum, r) => sum + Number(r.totalMeters || 0), 0);
+            const cumulative = pastTotal + todayMeters;
+
+            document.getElementById('ddr-cumulative-total').textContent = `${formatNumber(cumulative)} m`;
+        }
+
+        async function handleSaveDDR(e) {
+            e.preventDefault();
+            const projId = appState.selectedProjectSiteId;
+            const date = document.getElementById('ddr-date').value;
+            const rigId = document.getElementById('ddr-rig-select').value;
+            const operator = document.getElementById('ddr-operator').value.trim();
+            const fuel = parseFloat(document.getElementById('ddr-fuel').value) || 0;
+            const notes = document.getElementById('ddr-notes').value.trim();
+            const editId = document.getElementById('ddr-edit-id').value;
+
+            const holeRows = Array.from(document.querySelectorAll('#ddr-holes-container .hole-row'));
+            const holes = [];
+            let invalidDepth = false;
+
+            holeRows.forEach(row => {
+                const holeId = row.querySelector('.hole-id').value.trim().toUpperCase();
+                const from = parseFloat(row.querySelector('.hole-from').value);
+                const to = parseFloat(row.querySelector('.hole-to').value);
+                if (to < from) invalidDepth = true;
+                const meters = Math.max(0, (to - from) || 0);
+                holes.push({ holeId, from, to, meters });
+            });
+
+            if (invalidDepth) {
+                showToast('Nilai kedalaman "To" tidak boleh lebih kecil dari "From"!', 'error');
+                return;
+            }
+
+            const statuses = Array.from(document.querySelectorAll('input[name="ddr-status"]:checked')).map(cb => cb.value);
+            if (statuses.length === 0) {
+                showToast('Pilih minimal 1 Status Unit (Continue Hole, EOH, Moving, atau Maintenance).', 'error');
+                return;
+            }
+
+            const totalMeters = holes.reduce((s, h) => s + h.meters, 0);
+
+            if (editId) {
+                const idx = appState.reports.findIndex(r => r.id === editId);
+                if (idx !== -1) {
+                    appState.reports[idx] = {
+                        ...appState.reports[idx],
+                        date,
+                        rigId,
+                        operator,
+                        holes,
+                        totalMeters,
+                        fuel,
+                        statuses,
+                        notes
+                    };
+                }
+                showToast(`Laporan ${rigId} tanggal ${formatDateID(date)} berhasil diperbarui!`, 'success');
+            } else {
+                const newReport = {
+                    id: 'rep-' + Date.now(),
+                    projectId: projId,
+                    date,
+                    rigId,
+                    operator,
+                    holes,
+                    totalMeters,
+                    fuel,
+                    statuses,
+                    notes
+                };
+                appState.reports.push(newReport);
+                showToast(`Laporan harian ${rigId} (${formatNumber(totalMeters)} m) berhasil disimpan!`, 'success');
+            }
+
+            await persistChanges();
+            resetDDRForm();
+            renderProjectHistoryTable();
+        }
+
+        function resetDDRForm() {
+            document.getElementById('ddr-edit-id').value = '';
+            document.getElementById('ddr-form-title').textContent = 'Form Input Daily Drilling Report (DDR)';
+            document.getElementById('btn-submit-ddr').innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>Simpan Laporan Harian</span>`;
+            document.getElementById('btn-cancel-edit').classList.add('hidden');
+
+            document.getElementById('ddr-fuel').value = '';
+            document.getElementById('ddr-notes').value = '';
+            document.querySelectorAll('input[name="ddr-status"]').forEach(cb => cb.checked = false);
+
+            const holesContainer = document.getElementById('ddr-holes-container');
+            holesContainer.innerHTML = '';
+            addHoleRow();
+            onDDRRigChange();
+            lucide.createIcons();
+        }
+
+        function editDDRReport(reportId) {
+            const rep = appState.reports.find(r => r.id === reportId);
+            if (!rep) return;
+
+            document.getElementById('ddr-edit-id').value = rep.id;
+            document.getElementById('ddr-form-title').textContent = `Edit Laporan Harian — ${rep.rigId} (${formatDateID(rep.date)})`;
+            document.getElementById('btn-submit-ddr').innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>Update Laporan</span>`;
+            document.getElementById('btn-cancel-edit').classList.remove('hidden');
+
+            document.getElementById('ddr-date').value = rep.date;
+            document.getElementById('ddr-rig-select').value = rep.rigId;
+            document.getElementById('ddr-operator').value = rep.operator;
+            document.getElementById('ddr-fuel').value = rep.fuel;
+            document.getElementById('ddr-notes').value = rep.notes || '';
+
+            const holesContainer = document.getElementById('ddr-holes-container');
+            holesContainer.innerHTML = '';
+            rep.holes.forEach(h => addHoleRow(h));
+
+            document.querySelectorAll('input[name="ddr-status"]').forEach(cb => {
+                cb.checked = rep.statuses.includes(cb.value);
+            });
+
+            recalculateDDRTotals();
+            lucide.createIcons();
+            document.getElementById('form-ddr').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function deleteDDRReport(reportId) {
+            showConfirmModal(
+                'Hapus Laporan Harian?',
+                'Catatan produksi harian ini akan dihapus permanen dan akumulasi meteran akan disesuaikan otomatis.',
+                async () => {
+                    appState.reports = appState.reports.filter(r => r.id !== reportId);
+                    await persistChanges();
+                    recalculateDDRTotals();
+                    renderProjectHistoryTable();
+                    showToast('Laporan harian berhasil dihapus.', 'info');
+                }
+            );
+        }
+
+        function clearHistoryFilters() {
+            document.getElementById('filter-history-rig').value = 'ALL';
+            document.getElementById('filter-history-date').value = '';
+            renderProjectHistoryTable();
+        }
+
+        function renderProjectHistoryTable() {
+            const projId = appState.selectedProjectSiteId;
+            const filterRig = document.getElementById('filter-history-rig').value;
+            const filterDate = document.getElementById('filter-history-date').value;
+
+            let list = appState.reports
+                .filter(r => r.projectId === projId)
+                .sort((a, b) => b.date.localeCompare(a.date));
+
+            if (filterRig && filterRig !== 'ALL') {
+                list = list.filter(r => r.rigId === filterRig);
+            }
+            if (filterDate) {
+                list = list.filter(r => r.date === filterDate);
+            }
+
+            const tbody = document.getElementById('project-history-tbody');
+            if (list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 text-xs">Tidak ada riwayat laporan yang sesuai dengan filter.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(rep => {
+                const holesHTML = rep.holes.map(h =>
+                    `<div class="text-xs font-mono text-slate-700"><span class="font-bold text-navy-900">${h.holeId}</span>: ${h.from}m → ${h.to}m <span class="text-orange-600 font-semibold">(${formatNumber(h.meters)}m)</span></div>`
+                ).join('');
+
+                return `
+                    <tr class="hover:bg-slate-50/90 transition align-top">
+                        <td class="py-3.5 px-3 whitespace-nowrap font-medium text-slate-800">${formatDateID(rep.date)}</td>
+                        <td class="py-3.5 px-3">
+                            <div class="font-mono font-bold text-slate-900">${rep.rigId}</div>
+                            <div class="text-xs text-slate-500">${rep.operator}</div>
+                        </td>
+                        <td class="py-3.5 px-3 space-y-1">
+                            ${holesHTML}
+                            ${rep.notes ? `<p class="text-[11px] text-slate-400 italic mt-1">"${rep.notes}"</p>` : ''}
+                        </td>
+                        <td class="py-3.5 px-3 text-right font-mono font-extrabold text-orange-600 whitespace-nowrap">${formatNumber(rep.totalMeters)} m</td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-600 whitespace-nowrap">${formatNumber(rep.fuel, 0)} L</td>
+                        <td class="py-3.5 px-3">
+                            <div class="flex flex-wrap gap-1 max-w-[180px]">
+                                ${rep.statuses.map(st => getStatusBadgeHTML(st)).join('')}
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-3 text-center whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1">
+                                <button onclick="editDDRReport('${rep.id}')" title="Edit Laporan" class="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition">
+                                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="deleteDDRReport('${rep.id}')" title="Hapus Laporan" class="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        // =========================================================================
+        // 6. LOGIKA HALAMAN 3: REKAP & ANALISIS MAINTENANCE RIG
+        // =========================================================================
+        function renderRekapPage() {
+            const rigMap = {};
+
+            appState.projects.forEach(p => {
+                p.rigs.forEach(r => {
+                    const key = `${p.id}::${r.id}`;
+                    rigMap[key] = {
+                        rigId: r.id,
+                        operator: r.operator,
+                        siteLocation: p.location,
+                        client: p.client,
+                        totalDays: 0,
+                        maintCount: 0,
+                        totalMeters: 0,
+                        eohCount: 0
+                    };
+                });
+            });
+
+            appState.reports.forEach(rep => {
+                const proj = appState.projects.find(p => p.id === rep.projectId);
+                const key = `${rep.projectId}::${rep.rigId}`;
+                if (!rigMap[key]) {
+                    rigMap[key] = {
+                        rigId: rep.rigId,
+                        operator: rep.operator,
+                        siteLocation: proj ? proj.location : 'Unknown Site',
+                        client: proj ? proj.client : '-',
+                        totalDays: 0,
+                        maintCount: 0,
+                        totalMeters: 0,
+                        eohCount: 0
+                    };
+                }
+                rigMap[key].totalDays += 1;
+                rigMap[key].totalMeters += Number(rep.totalMeters || 0);
+                rigMap[key].operator = rep.operator || rigMap[key].operator;
+
+                if (Array.isArray(rep.statuses)) {
+                    if (rep.statuses.includes('Maintenance')) {
+                        rigMap[key].maintCount += 1;
+                    }
+                    if (rep.statuses.includes('EOH')) {
+                        rigMap[key].eohCount += 1;
+                    }
+                }
+            });
+
+            const allRigsList = Object.values(rigMap).map(item => {
+                const maintRatio = item.totalDays > 0 ? (item.maintCount / item.totalDays) * 100 : 0;
+                const avgDailyMeter = item.totalDays > 0 ? (item.totalMeters / item.totalDays) : 0;
+                return { ...item, maintRatio, avgDailyMeter };
+            });
+
+            const sortedByMaint = [...allRigsList].sort((a, b) => {
+                if (b.maintCount !== a.maintCount) return b.maintCount - a.maintCount;
+                return b.maintRatio - a.maintRatio;
+            });
+
+            const maintCardsEl = document.getElementById('rekap-maint-cards');
+            const topMaintRigs = sortedByMaint.filter(r => r.maintCount > 0).slice(0, 3);
+
+            if (topMaintRigs.length === 0) {
+                maintCardsEl.innerHTML = `
+                    <div class="col-span-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 flex items-center gap-2.5">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-emerald-600"></i>
+                        <span>Seluruh unit rig beroperasi normal tanpa catatan status Maintenance.</span>
+                    </div>
+                `;
+            } else {
+                maintCardsEl.innerHTML = topMaintRigs.map((r, idx) => {
+                    const isCritical = r.maintCount >= 3 || r.maintRatio >= 50;
+                    return `
+                        <div class="rounded-xl p-4 border ${isCritical ? 'bg-red-50/90 border-red-300' : 'bg-amber-50/80 border-amber-200'} flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between gap-2 mb-1.5">
+                                    <span class="text-xs font-extrabold uppercase px-2 py-0.5 rounded ${isCritical ? 'bg-red-600 text-white' : 'bg-amber-500 text-navy-950'}">
+                                        #${idx + 1} ${isCritical ? 'Maintenance Tinggi' : 'Perlu Pantauan'}
+                                    </span>
+                                    <span class="font-mono text-xs font-bold ${isCritical ? 'text-red-700' : 'text-amber-800'}">${formatNumber(r.maintRatio, 0)}% Hari Kerja</span>
+                                </div>
+                                <h4 class="text-lg font-mono font-extrabold text-slate-900">${r.rigId}</h4>
+                                <p class="text-xs text-slate-600 truncate">${r.siteLocation}</p>
+                            </div>
+                            <div class="mt-3 pt-2.5 border-t ${isCritical ? 'border-red-200' : 'border-amber-200'} flex items-center justify-between text-xs">
+                                <span class="text-slate-600">Frekuensi: <strong class="text-slate-900">${r.maintCount}x</strong> dari ${r.totalDays} hari</span>
+                                <span class="font-semibold text-slate-700">Op: ${r.operator}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            const maintTbody = document.getElementById('rekap-maint-tbody');
+            maintTbody.innerHTML = sortedByMaint.map((r, idx) => {
+                const isHigh = r.maintCount >= 3 || r.maintRatio >= 50;
+                const isMed = !isHigh && r.maintCount > 0;
+                let badge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Normal / Prima</span>`;
+                if (isHigh) {
+                    badge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">Perlu Evaluasi / Maintenance Tinggi</span>`;
+                } else if (isMed) {
+                    badge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">Pantauan Berkala</span>`;
+                }
+
+                return `
+                    <tr class="${isHigh ? 'bg-red-50/40' : 'hover:bg-slate-50'} transition">
+                        <td class="py-3 px-3 font-mono font-bold text-slate-500">#${idx + 1}</td>
+                        <td class="py-3 px-3 font-mono font-bold text-slate-900">${r.rigId}</td>
+                        <td class="py-3 px-3 text-slate-700">${r.siteLocation}</td>
+                        <td class="py-3 px-3 text-center font-mono font-extrabold ${isHigh ? 'text-red-600' : 'text-slate-800'}">${r.maintCount} kali</td>
+                        <td class="py-3 px-3 text-center font-mono text-slate-600">${r.totalDays} hari</td>
+                        <td class="py-3 px-3 text-right font-mono font-bold ${isHigh ? 'text-red-600' : 'text-slate-700'}">${formatNumber(r.maintRatio, 1)}%</td>
+                        <td class="py-3 px-3">${badge}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            let grandTarget = 0;
+            let grandRealisasi = 0;
+            let grandFuel = 0;
+
+            const siteRowsHTML = appState.projects.map(p => {
+                const reps = appState.reports.filter(r => r.projectId === p.id);
+                const realisasi = reps.reduce((s, r) => s + Number(r.totalMeters || 0), 0);
+                const fuel = reps.reduce((s, r) => s + Number(r.fuel || 0), 0);
+                const target = Number(p.targetVolume || 0);
+                const sisa = Math.max(0, target - realisasi);
+                const pct = target > 0 ? (realisasi / target) * 100 : 0;
+
+                const uniqueDates = new Set(reps.map(r => r.date)).size;
+                const avgDailySite = uniqueDates > 0 ? (realisasi / uniqueDates) : 0;
+                const ratioFuel = realisasi > 0 ? (fuel / realisasi) : 0;
+
+                grandTarget += target;
+                grandRealisasi += realisasi;
+                grandFuel += fuel;
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-3.5 px-3">
+                            <div class="font-bold text-slate-900">${p.location}</div>
+                            <div class="text-xs text-slate-500">${p.client}</div>
+                        </td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-700">${formatNumber(target, 0)} m</td>
+                        <td class="py-3.5 px-3 text-right font-mono font-extrabold text-orange-600">${formatNumber(realisasi)} m</td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-600">${formatNumber(sisa)} m</td>
+                        <td class="py-3.5 px-3 text-center">
+                            <span class="inline-block font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900">${formatNumber(pct)}%</span>
+                        </td>
+                        <td class="py-3.5 px-3 text-right font-mono font-semibold text-slate-800">${formatNumber(avgDailySite)} m/hr</td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-700">${formatNumber(fuel, 0)} L</td>
+                        <td class="py-3.5 px-3 text-right font-mono text-slate-600">${formatNumber(ratioFuel, 2)} L/m</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('rekap-sites-tbody').innerHTML = siteRowsHTML;
+
+            const grandSisa = Math.max(0, grandTarget - grandRealisasi);
+            const grandPct = grandTarget > 0 ? (grandRealisasi / grandTarget) * 100 : 0;
+            const grandFuelRatio = grandRealisasi > 0 ? (grandFuel / grandRealisasi) : 0;
+            const allUniqueDates = new Set(appState.reports.map(r => r.date)).size;
+            const grandAvgDaily = allUniqueDates > 0 ? (grandRealisasi / allUniqueDates) : 0;
+
+            document.getElementById('rekap-sites-tfoot').innerHTML = `
+                <tr>
+                    <td class="py-3.5 px-3 rounded-l-lg">TOTAL KESELURUHAN (${appState.projects.length} SITE)</td>
+                    <td class="py-3.5 px-3 text-right font-mono">${formatNumber(grandTarget, 0)} m</td>
+                    <td class="py-3.5 px-3 text-right font-mono text-orange-600">${formatNumber(grandRealisasi)} m</td>
+                    <td class="py-3.5 px-3 text-right font-mono">${formatNumber(grandSisa)} m</td>
+                    <td class="py-3.5 px-3 text-center font-mono">${formatNumber(grandPct)}%</td>
+                    <td class="py-3.5 px-3 text-right font-mono">${formatNumber(grandAvgDaily)} m/hr</td>
+                    <td class="py-3.5 px-3 text-right font-mono">${formatNumber(grandFuel, 0)} L</td>
+                    <td class="py-3.5 px-3 text-right font-mono rounded-r-lg">${formatNumber(grandFuelRatio, 2)} L/m</td>
+                </tr>
+            `;
+
+            const sortedByProd = [...allRigsList].sort((a, b) => b.avgDailyMeter - a.avgDailyMeter);
+            document.getElementById('rekap-rig-avg-tbody').innerHTML = sortedByProd.map(r => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="py-3 px-3 font-mono font-bold text-slate-900">${r.rigId}</td>
+                    <td class="py-3 px-3 text-slate-700">${r.siteLocation}</td>
+                    <td class="py-3 px-3 text-slate-600">${r.operator}</td>
+                    <td class="py-3 px-3 text-center font-mono text-slate-700">${r.totalDays} hari</td>
+                    <td class="py-3 px-3 text-right font-mono font-semibold text-slate-800">${formatNumber(r.totalMeters)} m</td>
+                    <td class="py-3 px-3 text-right font-mono font-extrabold text-emerald-600">${formatNumber(r.avgDailyMeter)} m/hari</td>
+                    <td class="py-3 px-3 text-right font-mono text-slate-700">${r.eohCount} EOH</td>
+                </tr>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        // =========================================================================
+        // 7. EXPORT CSV & JSON BACKUP / RESTORE
+        // =========================================================================
+        function exportRekapCSV() {
+            let csv = 'Tanggal,Lokasi Site,Klien,ID Rig,Operator,Detail Hole,Total Meter (m),Penggunaan Solar (L),Status Unit,Catatan\n';
+
+            appState.reports.forEach(rep => {
+                const proj = appState.projects.find(p => p.id === rep.projectId);
+                const siteName = proj ? proj.location.replace(/,/g, ' ') : '-';
+                const clientName = proj ? proj.client.replace(/,/g, ' ') : '-';
+                const holeStr = rep.holes.map(h => `${h.holeId}(${h.from}-${h.to}m)`).join(' | ');
+                const statusStr = rep.statuses.join(' + ');
+                const notesStr = (rep.notes || '').replace(/,/g, ' ').replace(/\n/g, ' ');
+
+                csv += `${rep.date},"${siteName}","${clientName}",${rep.rigId},"${rep.operator}","${holeStr}",${rep.totalMeters},${rep.fuel},"${statusStr}","${notesStr}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Rekap_Daily_Drilling_Report_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showToast('File CSV rekapitulasi berhasil diunduh!', 'success');
+        }
+
+        function exportBackupJSON() {
+            const dataStr = JSON.stringify(appState, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `DrillTrack_Backup_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast('Backup JSON berhasil diunduh!', 'success');
+        }
+
+        function importBackupJSON(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (!isValidStatePayload(parsed)) {
+                        showToast('Format file JSON tidak valid untuk aplikasi DDR.', 'error');
+                        return;
+                    }
+                    appState = normalizeState({ ...parsed, updatedAt: new Date().toISOString() }, getInitialDemoData());
+                    await persistChanges();
+                    refreshAllViews();
+                    showToast('Data backup JSON berhasil dipulihkan!', 'success');
+                } catch (_) {
+                    showToast('Gagal membaca file JSON.', 'error');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        // =========================================================================
+        // 8. BOOTSTRAP APLIKASI SAAT WINDOW LOAD
+        // =========================================================================
+        function refreshAllViews() {
+            renderHomePage();
+            renderProjectPage();
+            renderRekapPage();
+            lucide.createIcons();
+        }
+
+        window.addEventListener('online', () => {
+            if (localStorage.getItem(PENDING_SYNC_KEY) === 'true' && sbClient) {
+                syncOnStartupOrManual(false);
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            loadSupabaseConfig();
+            const initialLocal = loadLocalBackup() || getInitialDemoData();
+            appState = normalizeState(initialLocal, getInitialDemoData());
+            refreshAllViews();
+            await syncOnStartupOrManual(false);
+        });
+    </script>
+</body>
+</html>
